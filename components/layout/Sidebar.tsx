@@ -1,18 +1,24 @@
 'use client'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { LayoutDashboard, TrendingUp, Heart, IndianRupee, Zap, Users, BarChart3, MessageCircle, Sparkles } from 'lucide-react'
+import {
+  LayoutDashboard, TrendingUp, Heart, IndianRupee,
+  Zap, Users, BarChart3, MessageCircle, Sparkles,
+  BarChart2, Shield, Clock, Lock
+} from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const nav = [
-  { href: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-  { href: '/dashboard/fire-planner', icon: TrendingUp, label: 'FIRE Planner' },
-  { href: '/dashboard/money-health', icon: Heart, label: 'Money Health' },
-  { href: '/dashboard/tax-wizard', icon: IndianRupee, label: 'Tax Wizard' },
-  { href: '/dashboard/life-event', icon: Zap, label: 'Life Events' },
-  { href: '/dashboard/couples-planner', icon: Users, label: "Couple's Planner" },
-  { href: '/dashboard/portfolio', icon: BarChart3, label: 'Portfolio X-Ray' },
-  { href: '/dashboard/chat', icon: MessageCircle, label: 'AI Chat' },
+  { href: '/dashboard',                   icon: LayoutDashboard, label: 'Dashboard'       },
+  { href: '/dashboard/fire-planner',      icon: TrendingUp,      label: 'FIRE Planner'    },
+  { href: '/dashboard/money-health',      icon: Heart,           label: 'Money Health'    },
+  { href: '/dashboard/tax-wizard',        icon: IndianRupee,     label: 'Tax Wizard'      },
+  { href: '/dashboard/life-event',        icon: Zap,             label: 'Life Events'     },
+  { href: '/dashboard/couples-planner',   icon: Users,           label: "Couple's Plan"   },
+  { href: '/dashboard/portfolio',         icon: BarChart3,       label: 'Portfolio X-Ray' },
+  { href: '/dashboard/insights',          icon: BarChart2,       label: 'Insights'        },
+  { href: '/dashboard/chat',              icon: MessageCircle,   label: 'AI Chat'         },
+  { href: '/dashboard/privacy',           icon: Lock,            label: 'Privacy & Data'  },
 ]
 
 export default function Sidebar() {
@@ -26,17 +32,16 @@ export default function Sidebar() {
           </div>
           <div>
             <span className="font-display font-bold block leading-none">Money Mentor</span>
-            <span className="text-[10px] text-primary font-medium">Multi-Agent AI</span>
+            <span className="text-[10px] text-primary font-medium">Multi-Agent AI v3</span>
           </div>
         </Link>
       </div>
-      <nav className="flex-1 px-3 space-y-1">
+      <nav className="flex-1 px-3 space-y-0.5 overflow-y-auto">
         {nav.map(({ href, icon: Icon, label }) => {
           const active = pathname === href || (href !== '/dashboard' && pathname.startsWith(href))
           return (
             <Link key={href} href={href} className={cn('nav-item', active && 'active')}>
-              <Icon className="w-4 h-4 shrink-0" />
-              {label}
+              <Icon className="w-4 h-4 shrink-0" /> {label}
             </Link>
           )
         })}
@@ -45,9 +50,11 @@ export default function Sidebar() {
         <div className="glass-card rounded-xl p-3 text-xs">
           <div className="flex items-center gap-1.5 text-primary font-semibold mb-1">
             <span className="w-1.5 h-1.5 bg-primary rounded-full animate-pulse" />
-            7 Agents Active
+            9 Agents Active
           </div>
-          <div className="text-muted-foreground">Orchestrator · Data · Analysis · Planning · Risk · Execution · Memory</div>
+          <div className="text-muted-foreground text-[10px] leading-relaxed">
+            Orchestrator · Data · Analysis · Planning · Risk · Execution · Memory · Action · Question
+          </div>
         </div>
       </div>
     </aside>

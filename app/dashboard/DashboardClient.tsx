@@ -9,9 +9,14 @@ import {
 } from 'lucide-react'
 import EditableCard from '@/components/dashboard/EditableCard'
 import ConfirmModal from '@/components/dashboard/ConfirmModal'
-
-import { formatCurrency } from '@/tools/financialTools'
 import ScoreRingDynamic from '@/components/charts/ScoreRingDynamic'
+import { formatCurrency } from '@/tools/financialTools'
+import dynamic from 'next/dynamic'
+
+const NextBestAction   = dynamic(() => import('@/components/features/NextBestAction'),   { ssr: false })
+const SmartQuestion    = dynamic(() => import('@/components/features/SmartQuestion'),    { ssr: false })
+const AlertsWidget     = dynamic(() => import('@/components/features/AlertsWidget'),     { ssr: false })
+const GamificationWidget = dynamic(() => import('@/components/features/GamificationWidget'), { ssr: false })
 
 interface ProfileSection {
   monthly?: number
@@ -249,6 +254,15 @@ export default function DashboardClient() {
         </div>
       </div>
 
+      {/* Smart Question */}
+      <SmartQuestion />
+
+      {/* Alerts */}
+      <AlertsWidget />
+
+      {/* Next Best Action */}
+      <NextBestAction />
+
       {/* Key metrics */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
@@ -474,6 +488,9 @@ export default function DashboardClient() {
           </div>
         )}
       </div>
+
+      {/* Gamification */}
+      <GamificationWidget />
 
       {/* Reports */}
       <div className="glass-card rounded-2xl p-5">

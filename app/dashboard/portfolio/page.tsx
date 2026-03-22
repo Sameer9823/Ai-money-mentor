@@ -1,8 +1,9 @@
 'use client'
-import { useState } from 'react'
-import { BarChart3, Plus, Trash2 } from 'lucide-react'
+import { useState, useMemo } from 'react'
+import { BarChart3, Plus, Trash2, RefreshCw } from 'lucide-react'
 import { useAgent } from '@/hooks/useAgent'
 import AgentPipeline from '@/components/ui/AgentPipeline'
+import { autoRebalance } from '@/lib/autoRebalance'
 import ImpactDashboard from '@/components/ui/ImpactDashboard'
 import { formatCurrency } from '@/tools/financialTools'
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts'
@@ -53,6 +54,10 @@ export default function PortfolioPage() {
 
   const pm = result?.analysis?.portfolioMetrics
   const plan = result?.plan
+  const rebalance = useMemo(() => {
+    if (!result) return null
+    return autoRebalance(funds, riskProfile)
+  }, [result, funds, riskProfile])
   const allocData = pm ? Object.entries(pm.categoryBreakdown).map(([name, value]) => ({ name, value })) : []
 
   return (
@@ -158,8 +163,8 @@ export default function PortfolioPage() {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             {[
               { label: 'XIRR', value: `${pm.xirr.toFixed(1)}%`, good: pm.xirr >= 12 },
-              { label: 'Overlap Score', value: `${pm.overlap.overlapRisk}/100`, good: pm.overlap.overlapScore < 30 },
-              { label: 'Expense Drag', value: `${pm.expenseRatioDrag}%/yr`, good: pm.expenseRatioDrag < 1 },
+              { label: 'Overlap Score', value: `${pm.overlap.overlapScore}/100`, good: pm.overlap.overlapScore < 30 },
+              { label: 'Expense Drag', value: `${pm.averageExpenseRatio}%/yr`, good: pm.averageExpenseRatio < 1 },
               { label: 'Diversification', value: `${pm.overlap.diversificationScore}/100`, good: pm.overlap.diversificationScore > 60 },
             ].map(({ label, value, good }) => (
               <div key={label} className="stat-card">
@@ -228,6 +233,44 @@ export default function PortfolioPage() {
                     <div>
                       <div className="font-medium text-sm">{r.fund}</div>
                       <div className="text-xs text-muted-foreground">{r.reason}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Auto-Rebalancing Engine */}
+          {rebalance && rebalance.needsRebalancing && (
+            <div className="glass-card rounded-2xl p-5">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-display font-semibold flex items-center gap-2">
+                  <RefreshCw className="w-4 h-4 text-amber-500" />
+                  Auto-Rebalancing Suggestions
+                </h3>
+                <span className={`text-xs px-2 py-0.5 rounded-full font-medium
+                  ${rebalance.imbalanceScore > 50 ? 'bg-rose-500/10 text-rose-500' : 'bg-amber-500/10 text-amber-500'}`}>
+                  Drift: {rebalance.imbalanceScore}/100
+                </span>
+              </div>
+              <p className="text-sm text-muted-foreground mb-3">{rebalance.summary}</p>
+              {rebalance.expenseSavings > 0 && (
+                <div className="bg-emerald-500/10 rounded-xl px-4 py-2 mb-3 text-sm text-emerald-600 dark:text-emerald-400 font-medium">
+                  💰 Switching to index funds saves ₹{rebalance.expenseSavings.toLocaleString('en-IN')}/year in expense ratios
+                </div>
+              )}
+              <div className="space-y-2">
+                {rebalance.moves.map((move, i) => (
+                  <div key={i} className="flex items-start gap-3 p-3 bg-secondary rounded-xl">
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-bold shrink-0 mt-0.5
+                      ${move.urgency === 'immediate' ? 'bg-rose-500/10 text-rose-500' : move.urgency === 'this-month' ? 'bg-amber-500/10 text-amber-500' : 'bg-blue-500/10 text-blue-500'}`}>
+                      {move.urgency}
+                    </span>
+                    <div className="flex-1">
+                      <div className="text-sm font-medium">
+                        Move ₹{move.amount.toLocaleString('en-IN')} from <span className="text-rose-500">{move.from}</span> → <span className="text-emerald-500">{move.to}</span>
+                      </div>
+                      <div className="text-xs text-muted-foreground mt-0.5">{move.reason}</div>
                     </div>
                   </div>
                 ))}
