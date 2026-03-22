@@ -141,14 +141,25 @@ export default function DashboardClient() {
     if (!profile) return
     setRerunning(true)
     try {
+      // Only send triggerRerun flag — don't re-send entire profile which causes schema conflicts
       const res = await fetch('/api/profile', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...profile, triggerRerun: true }),
+        body: JSON.stringify({ triggerRerun: true }),
       })
-      if (res.ok) { const d = await res.json(); setProfile(d.profile); showToast('Analysis updated!') }
-    } catch { showToast('Re-run failed', 'error') }
-    finally { setRerunning(false) }
+      if (res.ok) {
+        const d = await res.json()
+        if (d.profile) setProfile(d.profile)
+        showToast('Analysis updated!')
+      } else {
+        const err = await res.json().catch(() => ({}))
+        showToast('Re-run failed: ' + (err.error ?? 'Server error'), 'error')
+      }
+    } catch {
+      showToast('Re-run failed', 'error')
+    } finally {
+      setRerunning(false)
+    }
   }
 
   async function addGoal() {
@@ -182,13 +193,38 @@ export default function DashboardClient() {
     setDownloading(reportId)
     try {
       const res = await fetch(`/api/reports/pdf?reportId=${reportId}`)
-      if (!res.ok) { showToast('Failed to fetch report', 'error'); return }
-      const { reportData, userName } = await res.json()
+      const contentType = res.headers.get('content-type') ?? ''
+
+      // If response is HTML, it's a Next.js error page — extract useful info
+      if (contentType.includes('text/html')) {
+        showToast('Server error generating report. Check terminal logs.', 'error')
+        return
+      }
+
+      const json = await res.json().catch(() => null)
+      if (!res.ok || !json) {
+        showToast(json?.error ?? 'Failed to fetch report', 'error')
+        return
+      }
+
+      const reportData = json.reportData
+      const uName = json.userName ?? 'User'
+
+      if (!reportData) {
+        showToast('Report data is empty', 'error')
+        return
+      }
+
       const { generateAndDownloadPDF } = await import('@/lib/generatePDF')
-      await generateAndDownloadPDF(reportData, userName)
+      await generateAndDownloadPDF(reportData, uName)
       showToast('PDF downloaded!')
-    } catch { showToast('PDF generation failed', 'error') }
-    finally { setDownloading(null) }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      console.error('PDF download error:', msg)
+      showToast(`Download failed: ${msg.slice(0, 100)}`, 'error')
+    } finally {
+      setDownloading(null)
+    }
   }
 
   async function deleteAccount() {

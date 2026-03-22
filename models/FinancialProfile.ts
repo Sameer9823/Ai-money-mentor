@@ -137,9 +137,7 @@ const FinancialProfileSchema = new Schema<IFinancialProfile>(
 )
 
 // Auto-increment version on save
-FinancialProfileSchema.pre('findOneAndUpdate', function () {
-  this.updateOne({}, { $inc: { version: 1 } })
-})
+
 
 const FinancialProfile: Model<IFinancialProfile> =
   mongoose.models.FinancialProfile ||
