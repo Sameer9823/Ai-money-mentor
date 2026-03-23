@@ -23,7 +23,28 @@ export default function FirePlannerPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    await run('fire_plan', form)
+    const data = await run('fire_plan', form)
+    if (data) {
+      await fetch('/api/profile', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          income:   { monthly: form.monthlyIncome },
+          expenses: { monthly: form.monthlyExpenses },
+          personal: { age: form.age, retirementAge: form.retirementAge, riskProfile: form.riskProfile },
+          savings:  { total: form.currentSavings },
+          investments: { total: form.currentInvestments },
+        }),
+      }).catch(() => {})
+      await fetch('/api/profile/analysis', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          retirementReadiness: data.impactDashboard?.retirementReadiness ?? 0,
+          taxSaved: data.impactDashboard?.taxSaved ?? 0,
+        }),
+      }).catch(() => {})
+    }
   }
 
   const plan = result?.plan

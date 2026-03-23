@@ -118,6 +118,16 @@ export default function DashboardClient() {
       } finally { setLoading(false) }
     }
     load()
+
+    // Re-fetch profile when user returns to this tab (e.g. after calculating on another page)
+    function onFocus() {
+      fetch('/api/profile')
+        .then(r => r.ok ? r.json() : null)
+        .then(d => { if (d?.profile) setProfile(d.profile) })
+        .catch(() => {})
+    }
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
   }, [])
 
   async function saveProfile() {

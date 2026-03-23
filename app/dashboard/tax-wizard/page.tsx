@@ -28,13 +28,28 @@ export default function TaxWizardPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     let payload: Record<string, unknown> = { ...form }
-
     if (pdfFile) {
       const buf = await pdfFile.arrayBuffer()
       payload.pdfBuffer = Buffer.from(buf).toString('base64')
     }
-
-    await run('tax_wizard', payload)
+    const data = await run('tax_wizard', payload)
+    if (data) {
+      const grossIncome = form.basicSalary + form.hra + form.specialAllowance + form.otherIncome
+      await fetch('/api/profile', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          income: { monthly: Math.round(grossIncome / 12), annual: grossIncome },
+          tax:    { section80C: form.section80C },
+          personal: { city: form.cityType },
+        }),
+      }).catch(() => {})
+      await fetch('/api/profile/analysis', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ taxSaved: data.impactDashboard?.taxSaved ?? 0 }),
+      }).catch(() => {})
+    }
   }
 
   const taxResult = result?.analysis?.taxResult

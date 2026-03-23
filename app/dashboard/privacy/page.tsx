@@ -5,17 +5,38 @@ import ConfirmModal from '@/components/dashboard/ConfirmModal'
 
 export default function PrivacyPage() {
   const [deleteModal, setDeleteModal] = useState(false)
-  const [exportModal, setExportModal] = useState(false)
-  const [toast, setToast] = useState<string | null>(null)
+  const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null)
+  const [exporting, setExporting] = useState<string | null>(null)
 
-  function showToast(msg: string) {
-    setToast(msg)
-    setTimeout(() => setToast(null), 3000)
+  function showToast(msg: string, ok = true) {
+    setToast({ msg, ok })
+    setTimeout(() => setToast(null), 3500)
   }
 
-  function downloadExport(format: 'json' | 'csv') {
-    window.open(`/api/export?format=${format}`, '_blank')
-    showToast(`Downloading ${format.toUpperCase()} export...`)
+  async function downloadExport(format: 'json' | 'csv') {
+    setExporting(format)
+    try {
+      const res = await fetch(`/api/export?format=${format}`)
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        showToast(err.error ?? 'Export failed', false)
+        return
+      }
+      const blob = await res.blob()
+      const url  = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href     = url
+      link.download = `money-mentor-export-${new Date().toISOString().split('T')[0]}.${format}`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      setTimeout(() => URL.revokeObjectURL(url), 3000)
+      showToast(`${format.toUpperCase()} exported successfully!`)
+    } catch (err) {
+      showToast(`Export failed: ${err instanceof Error ? err.message : String(err)}`, false)
+    } finally {
+      setExporting(null)
+    }
   }
 
   async function deleteAllData() {
@@ -41,8 +62,10 @@ export default function PrivacyPage() {
   return (
     <div className="max-w-3xl mx-auto space-y-8">
       {toast && (
-        <div className="fixed top-4 right-4 z-50 px-4 py-3 rounded-xl bg-emerald-500 text-white text-sm font-medium shadow-lg animate-fade-in flex items-center gap-2">
-          <CheckCircle2 className="w-4 h-4" /> {toast}
+        <div className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-xl shadow-lg text-sm font-medium animate-fade-in flex items-center gap-2
+          ${toast.ok ? 'bg-emerald-500 text-white' : 'bg-destructive text-white'}`}>
+          {toast.ok ? <CheckCircle2 className="w-4 h-4" /> : <AlertTriangle className="w-4 h-4" />}
+          {toast.msg}
         </div>
       )}
 
@@ -83,7 +106,7 @@ export default function PrivacyPage() {
       </div>
 
       {/* Export */}
-      <div className="glass-card rounded-2xl p-6">
+      {/* <div className="glass-card rounded-2xl p-6">
         <div className="flex items-center gap-2 mb-4">
           <Download className="w-4 h-4 text-primary" />
           <h2 className="font-display font-semibold">Export Your Data</h2>
@@ -95,20 +118,22 @@ export default function PrivacyPage() {
         <div className="flex gap-3">
           <button
             onClick={() => downloadExport('json')}
-            className="flex items-center gap-2 btn-secondary text-sm py-2.5 px-4"
+            disabled={!!exporting}
+            className="flex items-center gap-2 btn-secondary text-sm py-2.5 px-4 disabled:opacity-50"
           >
             <FileJson className="w-4 h-4 text-blue-500" />
-            Export as JSON
+            {exporting === 'json' ? 'Exporting...' : 'Export as JSON'}
           </button>
           <button
             onClick={() => downloadExport('csv')}
-            className="flex items-center gap-2 btn-secondary text-sm py-2.5 px-4"
+            disabled={!!exporting}
+            className="flex items-center gap-2 btn-secondary text-sm py-2.5 px-4 disabled:opacity-50"
           >
             <FileText className="w-4 h-4 text-emerald-500" />
-            Export as CSV
+            {exporting === 'csv' ? 'Exporting...' : 'Export as CSV'}
           </button>
         </div>
-      </div>
+      </div> */}
 
       {/* GDPR rights */}
       <div className="glass-card rounded-2xl p-6">
@@ -119,7 +144,7 @@ export default function PrivacyPage() {
         <div className="space-y-3">
           {[
             { right: 'Right to Access', desc: 'Download all your data using the export feature above' },
-            { right: 'Right to Portability', desc: 'Export in JSON or CSV format for use elsewhere' },
+            { right: 'Right to Portability', desc: 'Export in PDF format for use elsewhere' },
             { right: 'Right to Erasure', desc: 'Permanently delete all your data at any time' },
             { right: 'Right to Correction', desc: 'Edit your profile and financial data from the dashboard' },
           ].map(({ right, desc }) => (

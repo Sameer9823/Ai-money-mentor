@@ -4,7 +4,7 @@ import { Heart } from 'lucide-react'
 import { useAgent } from '@/hooks/useAgent'
 import AgentPipeline from '@/components/ui/AgentPipeline'
 import ImpactDashboard from '@/components/ui/ImpactDashboard'
-import ScoreRing from '@/components/charts/ScoreRing'
+import ScoreRing from '@/components/charts/ScoreRingDynamic'
 
 export default function MoneyHealthPage() {
   const { loading, result, error, stepTrace, run, reset } = useAgent()
@@ -24,10 +24,47 @@ export default function MoneyHealthPage() {
   }
 
   async function handleSubmit() {
-    await run('money_health', {
+    const data = await run('money_health', {
       ...form,
       investmentTypes: form.investmentTypes.split(',').map(s => s.trim()),
     })
+
+    if (data) {
+      // Calculate score from dimensions
+      const emergencyScore = form.emergencyFundMonths >= 6 ? 20 : form.emergencyFundMonths >= 3 ? 12 : 4
+      const insuranceScore = (form.hasTermInsurance ? 10 : 0) + (form.hasHealthInsurance ? 10 : 0)
+      const investScore    = Math.min(20, Math.round((form.investmentAmount / Math.max(1, form.monthlyIncome)) * 60))
+      const debtScore      = form.monthlyEMI / Math.max(1, form.monthlyIncome) < 0.2 ? 15 : form.monthlyEMI / Math.max(1, form.monthlyIncome) < 0.4 ? 8 : 3
+      const taxScore       = Math.min(10, Math.round((form.section80CInvested / 150000) * 10))
+      const retireScore    = form.hasRetirementPlan ? 15 : form.hasNPS ? 8 : 3
+      const score          = emergencyScore + insuranceScore + investScore + debtScore + taxScore + retireScore
+      const retirementReadiness = data.impactDashboard?.retirementReadiness ?? 0
+      const taxSaved            = data.impactDashboard?.taxSaved ?? 0
+
+      // Save to profile latestAnalysis so dashboard updates
+      await fetch('/api/profile', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          // Also update the profile financial data
+          income:      { monthly: form.monthlyIncome },
+          expenses:    { monthly: form.monthlyExpenses, emi: form.monthlyEMI },
+          savings:     { total: form.savings, emergencyMonths: form.emergencyFundMonths },
+          investments: { total: form.investmentAmount * 12 },
+          insurance:   { hasTermInsurance: form.hasTermInsurance, hasHealthInsurance: form.hasHealthInsurance, healthCover: form.healthCoverAmount },
+          liabilities: { totalDebt: form.totalDebt },
+          personal:    { age: form.age },
+          tax:         { section80C: form.section80CInvested },
+        }),
+      }).catch(() => {})
+
+      // Save latestAnalysis separately
+      await fetch('/api/profile/analysis', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ healthScore: score, retirementReadiness, taxSaved }),
+      }).catch(() => {})
+    }
   }
 
   const plan = result?.plan
