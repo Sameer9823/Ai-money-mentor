@@ -1,10 +1,11 @@
 'use client'
-import { useState } from 'react'
-import { TrendingUp } from 'lucide-react'
+import { useState, useMemo } from 'react'
+import { TrendingUp, ChevronDown, ChevronUp } from 'lucide-react'
 import { useAgent } from '@/hooks/useAgent'
 import AgentPipeline from '@/components/ui/AgentPipeline'
 import ImpactDashboard from '@/components/ui/ImpactDashboard'
 import { formatCurrency } from '@/tools/financialTools'
+import { generateFireRoadmap, formatCr } from '@/lib/fireRoadmap'
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, PieChart, Pie, Cell, Legend,
@@ -14,6 +15,7 @@ const COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#6b7280']
 
 export default function FirePlannerPage() {
   const { loading, result, error, stepTrace, run, reset } = useAgent()
+  const [showFullRoadmap, setShowFullRoadmap] = useState(false)
   const [form, setForm] = useState({
     age: 28, retirementAge: 45, monthlyIncome: 80000,
     monthlyExpenses: 40000, currentSavings: 200000,
@@ -47,9 +49,22 @@ export default function FirePlannerPage() {
     }
   }
 
-  const plan = result?.plan
+  const plan     = result?.plan
   const analysis = result?.analysis?.fireMetrics
-  const alloc = plan?.assetAllocation
+  const alloc    = plan?.assetAllocation
+
+  const roadmap = useMemo(() => {
+    if (!result || !analysis) return null
+    return generateFireRoadmap({
+      age:             form.age,
+      retirementAge:   form.retirementAge,
+      monthlyIncome:   form.monthlyIncome,
+      monthlyExpenses: form.monthlyExpenses,
+      currentSavings:  form.currentSavings + form.currentInvestments,
+      monthlySIP:      analysis.requiredSIP ?? Math.round((form.monthlyIncome - form.monthlyExpenses) * 0.5),
+      riskProfile:     form.riskProfile,
+    })
+  }, [result, analysis, form])
   const allocData = alloc ? [
     { name: 'Equity', value: alloc.equity },
     { name: 'Debt', value: alloc.debt },
@@ -240,6 +255,84 @@ export default function FirePlannerPage() {
                   </div>
                 ))}
               </div>
+            </div>
+          )}
+
+          {/* Month-by-Month Roadmap */}
+          {roadmap && (
+            <div className="glass-card rounded-2xl p-5">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="font-display font-semibold">Year-by-Year Roadmap</h3>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Corpus growth · SIP step-up · Asset allocation glide path
+                  </p>
+                </div>
+                <div className={`text-xs px-3 py-1.5 rounded-full font-semibold
+                  ${roadmap.achievesGoal ? 'bg-emerald-500/10 text-emerald-500' : 'bg-rose-500/10 text-rose-500'}`}>
+                  {roadmap.achievesGoal
+                    ? `Goal achieved at age ${roadmap.yearAchieved}`
+                    : `Gap: ${formatCr(roadmap.requiredCorpus - roadmap.finalCorpus)}`}
+                </div>
+              </div>
+
+              {/* Target vs Final */}
+              <div className="grid grid-cols-2 gap-3 mb-4">
+                <div className="bg-secondary rounded-xl p-3 text-center">
+                  <div className="text-xs text-muted-foreground mb-1">Required Corpus</div>
+                  <div className="font-display font-bold text-lg text-rose-500">{formatCr(roadmap.requiredCorpus)}</div>
+                </div>
+                <div className="bg-secondary rounded-xl p-3 text-center">
+                  <div className="text-xs text-muted-foreground mb-1">Projected Corpus</div>
+                  <div className={`font-display font-bold text-lg ${roadmap.achievesGoal ? 'text-emerald-500' : 'text-amber-500'}`}>
+                    {formatCr(roadmap.finalCorpus)}
+                  </div>
+                </div>
+              </div>
+
+              {/* Milestones table */}
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-border">
+                      <th className="text-left py-2 text-muted-foreground font-medium">Year</th>
+                      <th className="text-left py-2 text-muted-foreground font-medium">Age</th>
+                      <th className="text-right py-2 text-muted-foreground font-medium">Corpus</th>
+                      <th className="text-right py-2 text-muted-foreground font-medium">SIP/mo</th>
+                      <th className="text-center py-2 text-muted-foreground font-medium">Equity</th>
+                      <th className="text-left py-2 text-muted-foreground font-medium pl-3">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(showFullRoadmap ? roadmap.milestones : roadmap.milestones.filter((_, i) =>
+                      i === 0 || i === 2 || i === 4 || (i + 1) % 5 === 0 || i === roadmap.milestones.length - 1
+                    )).map((m) => (
+                      <tr key={m.year} className={`border-b border-border/50 hover:bg-secondary/50 transition-colors
+                        ${m.corpus >= roadmap.requiredCorpus ? 'bg-emerald-500/5' : ''}`}>
+                        <td className="py-2.5 font-semibold text-primary">Y{m.year}</td>
+                        <td className="py-2.5 text-muted-foreground">{m.age}</td>
+                        <td className="py-2.5 text-right font-bold">{formatCr(m.corpus)}</td>
+                        <td className="py-2.5 text-right text-emerald-500">{formatCr(m.sipAmount)}</td>
+                        <td className="py-2.5 text-center">
+                          <span className={`px-1.5 py-0.5 rounded text-xs font-medium
+                            ${m.equityPct >= 70 ? 'bg-emerald-500/10 text-emerald-500'
+                            : m.equityPct >= 50 ? 'bg-amber-500/10 text-amber-500'
+                            : 'bg-blue-500/10 text-blue-500'}`}>
+                            {m.equityPct}%
+                          </span>
+                        </td>
+                        <td className="py-2.5 text-muted-foreground pl-3 max-w-[200px] truncate">{m.action}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <button
+                onClick={() => setShowFullRoadmap(v => !v)}
+                className="mt-3 text-xs text-primary flex items-center gap-1 hover:underline"
+              >
+                {showFullRoadmap ? <><ChevronUp className="w-3 h-3" /> Show summary</> : <><ChevronDown className="w-3 h-3" /> Show all {roadmap.milestones.length} years</>}
+              </button>
             </div>
           )}
 

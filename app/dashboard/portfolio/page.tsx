@@ -1,12 +1,13 @@
 'use client'
-import { useState, useMemo } from 'react'
-import { BarChart3, Plus, Trash2, RefreshCw } from 'lucide-react'
+import { useState, useMemo, useCallback } from 'react'
+import { BarChart3, Plus, Trash2, RefreshCw, Upload, FileText, CheckCircle2 } from 'lucide-react'
 import { useAgent } from '@/hooks/useAgent'
 import AgentPipeline from '@/components/ui/AgentPipeline'
 import { autoRebalance } from '@/lib/autoRebalance'
 import ImpactDashboard from '@/components/ui/ImpactDashboard'
 import { formatCurrency } from '@/tools/financialTools'
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts'
+import { useDropzone } from 'react-dropzone'
 
 const COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#8b5cf6', '#ec4899']
 
@@ -39,17 +40,51 @@ export default function PortfolioPage() {
   ])
   const [riskProfile, setRiskProfile] = useState('moderate')
   const [horizon, setHorizon] = useState(10)
+  const [statementFile, setStatementFile] = useState<File | null>(null)
+  const [statementInfo, setStatementInfo] = useState<{ source: string; fundCount: number; investorName?: string } | null>(null)
+  const [parsedPreview, setParsedPreview] = useState<Array<{ name: string; category: string; currentValue: number }> | null>(null)
+  const [inputMode, setInputMode] = useState<'manual' | 'upload'>('manual')
+
+  const onDrop = useCallback((files: File[]) => {
+    if (!files[0]) return
+    setStatementFile(files[0])
+    setParsedPreview(null)
+    setStatementInfo(null)
+  }, [])
+
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    onDrop,
+    accept: { 'application/pdf': ['.pdf'] },
+    maxFiles: 1,
+  })
 
   function updateFund(i: number, k: keyof Fund, v: string | number) {
     setFunds(f => f.map((fund, idx) => idx === i ? { ...fund, [k]: v } : fund))
   }
 
   async function handleSubmit() {
-    await run('portfolio_xray', {
-      funds,
-      riskProfile,
-      investmentHorizon: horizon,
-    })
+    let payload: Record<string, unknown> = { funds, riskProfile, investmentHorizon: horizon }
+
+    if (inputMode === 'upload' && statementFile) {
+      const buf = await statementFile.arrayBuffer()
+      payload.pdfBuffer = Buffer.from(buf).toString('base64')
+      payload.funds = [] // let parser populate funds
+    }
+
+    const data = await run('portfolio_xray', payload)
+
+    // Show parsed statement info returned from server
+    if (data) {
+      const ps = (data as unknown as Record<string, unknown>).parsedStatement as { source: string; fundCount: number; investorName?: string } | undefined
+      if (ps) {
+        setStatementInfo(ps)
+        // Populate funds table from parsed data so user can see what was detected
+        const parsedFundList = (data as unknown as Record<string, unknown>).portfolioFunds as Array<{ name: string; category: string; currentValue: number }> | undefined
+        if (parsedFundList?.length) {
+          setParsedPreview(parsedFundList.map(f => ({ name: f.name, category: f.category, currentValue: f.currentValue })))
+        }
+      }
+    }
   }
 
   const pm = result?.analysis?.portfolioMetrics
@@ -74,7 +109,75 @@ export default function PortfolioPage() {
 
       {!result && (
         <div className="space-y-5">
-          {/* Summary */}
+
+          {/* Input mode toggle */}
+          <div className="glass-card rounded-2xl p-5">
+            <h3 className="font-display font-semibold mb-3">How do you want to enter your portfolio?</h3>
+            <div className="grid grid-cols-2 gap-3">
+              <button onClick={() => setInputMode('upload')}
+                className={`p-4 rounded-xl border-2 text-left transition-all ${inputMode === 'upload' ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/30'}`}>
+                <Upload className="w-5 h-5 text-primary mb-2" />
+                <div className="font-semibold text-sm">Upload Statement</div>
+                <div className="text-xs text-muted-foreground mt-1">CAMS or KFintech PDF — auto-detects all funds</div>
+              </button>
+              <button onClick={() => setInputMode('manual')}
+                className={`p-4 rounded-xl border-2 text-left transition-all ${inputMode === 'manual' ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/30'}`}>
+                <FileText className="w-5 h-5 text-cyan-500 mb-2" />
+                <div className="font-semibold text-sm">Enter Manually</div>
+                <div className="text-xs text-muted-foreground mt-1">Type fund names, units, NAV values</div>
+              </button>
+            </div>
+
+            {/* CAMS Upload zone */}
+            {inputMode === 'upload' && (
+              <div className="mt-4">
+                <div {...getRootProps()} className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors
+                  ${isDragActive ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/40'}`}>
+                  <input {...getInputProps()} />
+                  {statementFile ? (
+                    <div className="flex items-center justify-center gap-2 text-emerald-500">
+                      <CheckCircle2 className="w-5 h-5" />
+                      <span className="font-medium text-sm">{statementFile.name}</span>
+                    </div>
+                  ) : (
+                    <>
+                      <Upload className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
+                      <p className="font-medium text-sm">Drop your CAMS or KFintech statement here</p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Download from <strong>camsonline.com</strong> or <strong>kfintech.com</strong> → Consolidated Account Statement (CAS) as PDF
+                      </p>
+                    </>
+                  )}
+                </div>
+                {statementInfo && (
+                  <div className="mt-3 p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl">
+                    <div className="flex items-center gap-2 text-xs text-emerald-500 font-semibold mb-2">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      Detected {statementInfo.fundCount} funds from {statementInfo.source} statement
+                      {statementInfo.investorName && ` · ${statementInfo.investorName}`}
+                    </div>
+                    {parsedPreview && (
+                      <div className="space-y-1 max-h-40 overflow-y-auto">
+                        {parsedPreview.map((f, i) => (
+                          <div key={i} className="flex justify-between text-xs bg-background/50 rounded-lg px-2 py-1.5">
+                            <span className="text-muted-foreground truncate max-w-[60%]">{f.name}</span>
+                            <span className="text-xs bg-secondary px-1.5 py-0.5 rounded text-muted-foreground">{f.category}</span>
+                            <span className="font-medium text-emerald-500">{formatCurrency(f.currentValue)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+                <p className="text-xs text-muted-foreground mt-2">
+                  Your PDF is processed securely and never stored. Only fund names and values are extracted.
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* Summary — only for manual mode */}
+          {inputMode === 'manual' && (
           <div className="grid grid-cols-3 gap-3">
             {[
               { label: 'Total Invested', value: formatCurrency(funds.reduce((s, f) => s + f.investedAmount, 0)) },
@@ -87,8 +190,10 @@ export default function PortfolioPage() {
               </div>
             ))}
           </div>
+          )}
 
-          {/* Fund list */}
+          {/* Fund list — manual mode only */}
+          {inputMode === 'manual' && (
           <div className="glass-card rounded-2xl p-5 space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="font-display font-semibold">Your Funds</h3>
@@ -129,6 +234,7 @@ export default function PortfolioPage() {
               </div>
             ))}
           </div>
+          )} {/* end manual mode */}
 
           <div className="flex items-end gap-4">
             <div>
@@ -139,11 +245,15 @@ export default function PortfolioPage() {
                 <option value="aggressive">Aggressive</option>
               </select>
             </div>
-            <div>
-              <label className="text-sm font-medium block mb-1">Horizon (yrs)</label>
-              <input type="number" value={horizon} onChange={e => setHorizon(Number(e.target.value))} className="input-field w-24" />
-            </div>
-            <button onClick={handleSubmit} disabled={loading} className="btn-primary disabled:opacity-50">
+            {inputMode === 'manual' && (
+              <div>
+                <label className="text-sm font-medium block mb-1">Horizon (yrs)</label>
+                <input type="number" value={horizon} onChange={e => setHorizon(Number(e.target.value))} className="input-field w-24" />
+              </div>
+            )}
+            <button onClick={handleSubmit}
+              disabled={loading || (inputMode === 'upload' && !statementFile)}
+              className="btn-primary disabled:opacity-50">
               {loading ? 'Agents Running...' : '🔬 X-Ray Portfolio'}
             </button>
           </div>
