@@ -39,6 +39,13 @@ export interface IUserMemory extends Document {
     createdAt: string
     acted: boolean
   }>
+  // ✅ ADD THIS NEW FIELD
+  stockPortfolio?: Array<{
+    symbol: string
+    name: string
+    units: number
+    buyPrice: number
+  }>
 }
 
 const UserMemorySchema = new Schema<IUserMemory>(
@@ -81,6 +88,15 @@ const UserMemorySchema = new Schema<IUserMemory>(
         summary: String,
         createdAt: String,
         acted: { type: Boolean, default: false },
+      },
+    ],
+    // ✅ ADD THIS NEW FIELD TO SCHEMA
+    stockPortfolio: [
+      {
+        symbol: { type: String, required: true },
+        name: { type: String, required: true },
+        units: { type: Number, required: true },
+        buyPrice: { type: Number, required: true },
       },
     ],
   },

@@ -179,7 +179,24 @@ export async function runContinuousAgent(
           }
         }
 
-        // ── 5. Update gamification streak ─────────────────────────────
+        // ── 5. Auto-sync live stock prices from Yahoo Finance ──────────
+        try {
+          const memDoc = await UserMemory.findOne({ userId }).lean() as Record<string, unknown> | null
+          type SavedStock = { symbol: string; units: number; buyPrice: number }
+          const savedStocks = (memDoc?.stockPortfolio as SavedStock[] | undefined) ?? []
+          if (savedStocks.length > 0) {
+            const { enrichPortfolioWithLivePrices } = await import('@/lib/yahooFinanceApi')
+            const enriched = await enrichPortfolioWithLivePrices(savedStocks)
+            const totalValue = enriched.reduce((s, f) => s + f.currentValue, 0)
+            if (totalValue > 0) {
+              await FinancialProfile.findOneAndUpdate(
+                { userId },
+                { $set: { 'investments.total': totalValue, 'investments.lastSyncAt': new Date().toISOString() } },
+                { upsert: true }
+              )
+            }
+          }
+        } catch { /* non-critical */ }
         try {
           const [goals, reports] = await Promise.all([
             Goal.find({ userId }).lean(),

@@ -1,6 +1,7 @@
 'use client'
-import { useState, useMemo, useCallback } from 'react'
-import { BarChart3, Plus, Trash2, RefreshCw, Upload, FileText, CheckCircle2 } from 'lucide-react'
+import { useState, useMemo, useCallback, useEffect } from 'react'
+import Link from 'next/link'
+import { BarChart3, Plus, Trash2, RefreshCw, Upload, FileText, CheckCircle2, Link2 } from 'lucide-react'
 import { useAgent } from '@/hooks/useAgent'
 import AgentPipeline from '@/components/ui/AgentPipeline'
 import { autoRebalance } from '@/lib/autoRebalance'
@@ -38,8 +39,31 @@ export default function PortfolioPage() {
     { name: 'Parag Parikh Flexi Cap', category: 'Flexi Cap', investedAmount: 300000, currentValue: 390000, units: 3000, nav: 130, expenseRatio: 0.63 },
     { name: 'Axis Small Cap Fund', category: 'Small Cap', investedAmount: 100000, currentValue: 145000, units: 800, nav: 181.25, expenseRatio: 0.52 },
   ])
+  const [brokerConnected, setBrokerConnected] = useState(false)
+  const [brokerName, setBrokerName] = useState('')
+  const [brokerLoading, setBrokerLoading] = useState(true)
   const [riskProfile, setRiskProfile] = useState('moderate')
   const [horizon, setHorizon] = useState(10)
+
+  // Auto-fetch broker portfolio if connected
+  useEffect(() => {
+    fetch('/api/broker/portfolio')
+      .then(r => r.json())
+      .then(d => {
+        if (d.connected && d.portfolio?.funds?.length) {
+          setFunds(d.portfolio.funds.map((f: Fund) => ({
+            name: f.name, category: f.category,
+            investedAmount: f.investedAmount, currentValue: f.currentValue,
+            units: f.units, nav: f.nav, expenseRatio: f.expenseRatio ?? 0,
+          })))
+          setBrokerConnected(true)
+          setBrokerName(d.broker)
+          setInputMode('manual') // show the populated fund list
+        }
+      })
+      .catch(() => {})
+      .finally(() => setBrokerLoading(false))
+  }, [])
   const [statementFile, setStatementFile] = useState<File | null>(null)
   const [statementInfo, setStatementInfo] = useState<{ source: string; fundCount: number; investorName?: string } | null>(null)
   const [parsedPreview, setParsedPreview] = useState<Array<{ name: string; category: string; currentValue: number }> | null>(null)
@@ -106,6 +130,28 @@ export default function PortfolioPage() {
           <p className="text-muted-foreground text-sm">Live NAV from AMFI · Overlap analysis · AI rebalancing</p>
         </div>
       </div>
+
+      {/* Broker auto-sync banner */}
+      {brokerConnected ? (
+        <div className="flex items-center justify-between p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-sm">
+          <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400">
+            <CheckCircle2 className="w-4 h-4" />
+            <span className="font-medium">{brokerName} portfolio auto-loaded</span>
+            <span className="text-muted-foreground">— {funds.length} holdings synced</span>
+          </div>
+          <Link href="/dashboard/connect-broker" className="text-xs text-primary hover:underline">Manage</Link>
+        </div>
+      ) : !brokerLoading && (
+        <Link href="/dashboard/connect-broker"
+          className="flex items-center justify-between p-3 bg-primary/5 border border-primary/20 rounded-xl hover:bg-primary/10 transition-colors">
+          <div className="flex items-center gap-2 text-sm">
+            <Link2 className="w-4 h-4 text-primary" />
+            <span className="font-medium">Connect Angel One or Zerodha</span>
+            <span className="text-muted-foreground">to auto-import your real portfolio</span>
+          </div>
+          <span className="text-xs text-primary font-semibold">Connect →</span>
+        </Link>
+      )}
 
       {!result && (
         <div className="space-y-5">

@@ -4,7 +4,7 @@ import { usePathname } from 'next/navigation'
 import {
   LayoutDashboard, TrendingUp, Heart, IndianRupee,
   Zap, Users, BarChart3, MessageCircle, Sparkles,
-  BarChart2, Shield, Clock, Lock
+  BarChart2, Shield, Clock, Lock, Link2
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -17,6 +17,7 @@ const nav = [
   { href: '/dashboard/couples-planner',   icon: Users,           label: "Couple's Plan"   },
   { href: '/dashboard/portfolio',         icon: BarChart3,       label: 'Portfolio X-Ray' },
   { href: '/dashboard/insights',          icon: BarChart2,       label: 'Insights'        },
+  { href: '/dashboard/connect-broker',    icon: Link2,           label: 'Connect Broker'  },
   { href: '/dashboard/chat',              icon: MessageCircle,   label: 'AI Chat'         },
   { href: '/dashboard/privacy',           icon: Lock,            label: 'Privacy & Data'  },
 ]

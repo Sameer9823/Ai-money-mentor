@@ -7,6 +7,7 @@ import { TaskType } from '@/types/agents'
 import { connectDB } from '@/lib/db'
 import Report from '@/models/Report'
 import { randomUUID } from 'crypto'
+import { checkRateLimit, rateLimitHeaders } from '@/lib/rateLimit'
 
 const VALID_TASKS: TaskType[] = [
   'fire_plan', 'money_health', 'tax_wizard',
@@ -28,6 +29,16 @@ export async function POST(req: NextRequest) {
     const session = await getServerSession(authOptions)
     if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+    // Rate limit: 10 agent runs per minute per user
+    const userId = session.user.id ?? session.user.email!
+    const rl = checkRateLimit(userId, 'agent')
+    if (!rl.allowed) {
+      return NextResponse.json(
+        { error: `Too many requests. Try again in ${rl.resetIn}s.` },
+        { status: 429, headers: rateLimitHeaders(rl.remaining, rl.resetIn) }
+      )
+    }
+
     const body = await req.json()
     const { taskType, ...userInput } = body
 
@@ -38,8 +49,6 @@ export async function POST(req: NextRequest) {
     if (userInput.goals && typeof userInput.goals === 'string') {
       userInput.goals = userInput.goals.split(',').map((g: string) => g.trim()).filter(Boolean)
     }
-
-    const userId = session.user.id ?? session.user.email ?? 'anonymous'
 
     const result = await orchestrate({ taskType: taskType as TaskType, userId, userInput })
 
