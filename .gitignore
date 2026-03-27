@@ -31,7 +31,5 @@ coverage/
 # Ignore temporary files
 *.tmp
 # Ignore compiled files
-*.js
-*.css
 # Ignore source maps
 .next
