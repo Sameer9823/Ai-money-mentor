@@ -2,6 +2,20 @@ import { AgentContext, AgentResult, UserMemory, TaskType } from '@/types/agents'
 import { connectDB } from '@/lib/db'
 import UserMemoryModel from '@/models/UserMemory'
 
+// ─── Type Guards ──────────────────────────────────────────────────────────
+
+function isValidTaskType(type: string): type is TaskType {
+  return ['fire_plan', 'portfolio_xray', 'tax_wizard', 'sip_optimizer'].includes(type)
+}
+
+function isValidRiskProfile(profile: string): profile is 'conservative' | 'moderate' | 'aggressive' {
+  return ['conservative', 'moderate', 'aggressive'].includes(profile)
+}
+
+function isValidTaxRegime(regime: string): regime is 'new' | 'old' {
+  return ['new', 'old'].includes(regime)
+}
+
 // ─── Memory Agent ─────────────────────────────────────────────────────────
 // Stores user financial history, past recommendations, behavioral patterns.
 // Adjusts future recommendations based on ignored advice.
@@ -18,16 +32,67 @@ export async function memoryAgent(
       const doc = await UserMemoryModel.findOne({ userId: ctx.userId }).lean()
       if (!doc) return { success: true, data: null }
 
+      // Type-safe validation for profile
+      const riskProfile = doc.profile?.riskProfile
+      const validRiskProfile = riskProfile && isValidRiskProfile(riskProfile) 
+        ? riskProfile 
+        : undefined
+
+      // Type-safe validation for financialHistory
+      const lastTaxAnalysis = doc.financialHistory?.lastTaxAnalysis
+      const validTaxAnalysis = lastTaxAnalysis && 
+        lastTaxAnalysis.recommendedRegime &&
+        isValidTaxRegime(lastTaxAnalysis.recommendedRegime)
+        ? {
+            recommendedRegime: lastTaxAnalysis.recommendedRegime,
+            totalTax: lastTaxAnalysis.totalTax,
+            savings: lastTaxAnalysis.savings,
+            createdAt: lastTaxAnalysis.createdAt,
+          }
+        : undefined
+
+      const lastFirePlan = doc.financialHistory?.lastFirePlan
+        ? {
+            monthlySIP: doc.financialHistory.lastFirePlan.monthlySIP,
+            retirementCorpus: doc.financialHistory.lastFirePlan.retirementCorpus,
+            yearsToFIRE: doc.financialHistory.lastFirePlan.yearsToFIRE,
+            createdAt: doc.financialHistory.lastFirePlan.createdAt,
+          }
+        : undefined
+
+      // Type-safe validation for pastRecommendations
+      const validRecommendations = (doc.pastRecommendations ?? [])
+        .filter((rec: any) => rec?.type && isValidTaskType(rec.type))
+        .map((rec: any) => ({
+          type: rec.type as TaskType,
+          summary: rec.summary,
+          createdAt: rec.createdAt,
+          acted: rec.acted,
+        }))
+
       const memory: UserMemory = {
         userId: doc.userId,
-        profile: doc.profile ?? {},
-        financialHistory: doc.financialHistory ?? { updatedAt: new Date().toISOString() },
+        profile: {
+          age: doc.profile?.age,
+          monthlyIncome: doc.profile?.monthlyIncome,
+          monthlyExpenses: doc.profile?.monthlyExpenses,
+          riskProfile: validRiskProfile,
+          goals: doc.profile?.goals,
+          city: doc.profile?.city,
+        },
+        financialHistory: {
+          healthScore: doc.financialHistory?.healthScore,
+          lastFirePlan: lastFirePlan,
+          lastTaxAnalysis: validTaxAnalysis,
+          netWorth: doc.financialHistory?.netWorth,
+          updatedAt: doc.financialHistory?.updatedAt ?? new Date().toISOString(),
+        },
         behaviorPatterns: doc.behaviorPatterns ?? {
           ignoredAdvice: [],
           completedActions: [],
           engagementScore: 0,
         },
-        pastRecommendations: doc.pastRecommendations ?? [],
+        pastRecommendations: validRecommendations,
       }
       return { success: true, data: memory }
     }
@@ -40,33 +105,64 @@ export async function memoryAgent(
 
       if (data.profile) {
         for (const [k, v] of Object.entries(data.profile)) {
-          if (v !== undefined) update[`profile.${k}`] = v
+          if (v !== undefined) {
+            // Validate riskProfile before saving
+            if (k === 'riskProfile' && typeof v === 'string') {
+              if (isValidRiskProfile(v)) {
+                update[`profile.${k}`] = v
+              }
+            } else {
+              update[`profile.${k}`] = v
+            }
+          }
         }
       }
 
       if (data.financialHistory) {
         for (const [k, v] of Object.entries(data.financialHistory)) {
-          if (v !== undefined) update[`financialHistory.${k}`] = v
+          if (v !== undefined) {
+            // Validate lastTaxAnalysis
+            if (k === 'lastTaxAnalysis' && typeof v === 'object' && v !== null) {
+              const taxAnalysis = v as any
+              if (taxAnalysis.recommendedRegime && isValidTaxRegime(taxAnalysis.recommendedRegime)) {
+                update[`financialHistory.${k}`] = v
+              }
+            } else {
+              update[`financialHistory.${k}`] = v
+            }
+          }
         }
         update['financialHistory.updatedAt'] = now
       }
 
-      // Append new recommendation
+      // Append new recommendation with type validation
       if (data.pastRecommendations?.length) {
-        await UserMemoryModel.findOneAndUpdate(
-          { userId: ctx.userId },
-          {
-            $set: update,
-            $push: {
-              pastRecommendations: {
-                $each: data.pastRecommendations,
-                $slice: -20, // keep last 20
-              },
-            },
-            $inc: { 'behaviorPatterns.engagementScore': 1 },
-          },
-          { upsert: true, new: true }
+        const validRecommendations = data.pastRecommendations.filter(rec => 
+          rec.type && isValidTaskType(rec.type)
         )
+
+        if (validRecommendations.length > 0) {
+          await UserMemoryModel.findOneAndUpdate(
+            { userId: ctx.userId },
+            {
+              $set: update,
+              $push: {
+                pastRecommendations: {
+                  $each: validRecommendations,
+                  $slice: -20, // keep last 20
+                },
+              },
+              $inc: { 'behaviorPatterns.engagementScore': 1 },
+            },
+            { upsert: true, new: true }
+          )
+        } else {
+          await UserMemoryModel.findOneAndUpdate(
+            { userId: ctx.userId },
+            { $set: update },
+            { upsert: true, new: true }
+          )
+        }
       } else {
         await UserMemoryModel.findOneAndUpdate(
           { userId: ctx.userId },
