@@ -1,7 +1,4 @@
-/**
- * TOOL LAYER — Pure deterministic functions
- * NO LLM calls here. These are called by agents.
- */
+
 
 import { MutualFundNAV, PortfolioFund } from '@/types/agents'
 
