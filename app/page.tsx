@@ -45,7 +45,7 @@ export default function LandingPage() {
       <section className="max-w-6xl mx-auto px-4 pt-24 pb-20 text-center">
         <div className="inline-flex items-center gap-2 bg-primary/10 text-primary text-xs font-semibold px-3 py-1.5 rounded-full mb-6 border border-primary/20">
           <Zap className="w-3 h-3" />
-          Powered by Claude AI · Built for India
+          AI-Powered Financial Intelligence · Built for India                 
         </div>
         <h1 className="font-display text-5xl md:text-7xl font-bold leading-tight mb-6">
           Your AI Financial Advisor<br />
