@@ -1,11 +1,34 @@
-# 🧠 AI Money Mentor v2 — Agentic System
-### Multi-Agent Autonomous Financial Planning · ET AI Hackathon 2026
+**AI Money Mentor** is an autonomous financial planning system built for the Indian context. It moves beyond simple LLM wrappers by orchestrating a pipeline of 7 specialized AI agents to deliver precise, deterministic, and compliance-checked financial advice.
+
+---
+
+## ✨ Features
+
+- 📈 **FIRE Path Planner**: Personalized month-by-month roadmap to financial independence with exact SIP amounts.
+- 🛡️ **Money Health Score**: Diagnose your financial health across 6 dimensions in under 5 minutes.
+- 💸 **Tax Wizard**: Upload Form 16 and instantly see which tax regime saves more. Never miss a deduction again.
+- 🧠 **Life Event Advisor**: Get a complete financial strategy for every life moment (bonus, inheritance, new baby).
+- 👩‍❤️‍👨 **Couple's Planner**: India's first AI joint financial planner. Optimize HRA, SIPs, and taxes across both incomes.
+- 📊 **Portfolio X-Ray**: Upload CAMS statements and get XIRR, fund overlap, expense drag, and rebalancing suggestions.
+
+---
+
+## 🛠 Tech Stack
+
+- **Framework**: [Next.js 14](https://nextjs.org/) (App Directory)
+- **Frontend**: React 18, Tailwind CSS, [shadcn/ui](https://ui.shadcn.com/), Framer Motion
+- **State Management**: Zustand
+- **Charts & Visualization**: Recharts
+- **Database**: MongoDB & Mongoose
+- **Authentication**: NextAuth.js
+- **AI/LLM**: Anthropic Claude API (`@anthropic-ai/sdk`)
+- **Utilities**: `pdf-parse` (for Form 16/CAMS), `jsPDF` & `html2canvas` (export)
 
 ---
 
 ## 🏗 Architecture
 
-```
+```text
 User Request
      ↓
 Orchestrator Agent (Brain)
@@ -31,7 +54,7 @@ Audit Log ──→ Every step tracked with timing & retry count
 
 ## 📁 Key Files
 
-```
+```text
 /agents
   orchestrator.ts    ← Controls entire pipeline, retries, branching
   dataAgent.ts       ← AMFI NAV, PDF parsing, field validation
@@ -63,17 +86,24 @@ Audit Log ──→ Every step tracked with timing & retry count
 ## 🚀 Setup
 
 ```bash
+# 1. Clone the repository and install dependencies
 npm install
-cp .env.example .env.local   # fill in keys
-npm install tailwindcss-animate   # required plugin
+
+# 2. Set up environment variables
+cp .env.example .env.local
+
+# 3. Add necessary tailwind plugins if not already installed
+npm install tailwindcss-animate
+
+# 4. Start the development server
 npm run dev
 ```
 
-**Required .env.local keys:**
-```
+**Required `.env.local` keys:**
+```env
 ANTHROPIC_API_KEY=sk-ant-...
 MONGODB_URI=mongodb+srv://...
-NEXTAUTH_SECRET=...    # openssl rand -base64 32
+NEXTAUTH_SECRET=...    # generated via `openssl rand -base64 32`
 NEXTAUTH_URL=http://localhost:3000
 ```
 
@@ -83,16 +113,16 @@ NEXTAUTH_URL=http://localhost:3000
 
 | Feature | v1 (Simple) | v2 (Agentic) |
 |---|---|---|
-| Architecture | Direct LLM calls | 7-agent orchestrated pipeline |
-| Tax calculation | LLM | Deterministic engine (exact ₹) |
-| XIRR | LLM | Newton-Raphson algorithm |
-| Portfolio overlap | LLM | Deterministic analyzer |
-| Memory | None | MongoDB with behavior tracking |
-| Failure handling | None | Retry with backoff, fallback logic |
-| Audit trail | None | Every step logged with timing |
-| Compliance | Disclaimer text | Risk agent validates every plan |
-| Impact dashboard | Static | Real computed metrics |
-| Live pipeline UI | None | AgentPipeline component |
+| **Architecture** | Direct LLM calls | 7-agent orchestrated pipeline |
+| **Tax calculation** | LLM | Deterministic engine (exact ₹) |
+| **XIRR** | LLM | Newton-Raphson algorithm |
+| **Portfolio overlap**| LLM | Deterministic analyzer |
+| **Memory** | None | MongoDB with behavior tracking |
+| **Failure handling** | None | Retry with backoff, fallback logic |
+| **Audit trail** | None | Every step logged with timing |
+| **Compliance** | Disclaimer text | Risk agent validates every plan |
+| **Impact dashboard** | Static | Real computed metrics |
+| **Live pipeline UI** | None | AgentPipeline component |
 
 ---
 
@@ -112,11 +142,11 @@ NEXTAUTH_URL=http://localhost:3000
 
 | Metric | How Calculated |
 |---|---|
-| Tax Saved | `oldRegime.tax - newRegime.tax` (deterministic) |
-| XIRR | Newton-Raphson on cashflows |
-| Retirement Readiness | `projectedCorpus / neededCorpus × 100` |
-| Expense Drag | Weighted average ER × portfolio value |
-| Overlap Score | Category concentration + duplicate fund count |
+| **Tax Saved** | `oldRegime.tax - newRegime.tax` (deterministic) |
+| **XIRR** | Newton-Raphson on cashflows |
+| **Retirement Readiness** | `projectedCorpus / neededCorpus × 100` |
+| **Expense Drag** | Weighted average ER × portfolio value |
+| **Overlap Score** | Category concentration + duplicate fund count |
 
 ---
 
@@ -141,4 +171,4 @@ All features go through one route: `POST /api/agent`
 { "taskType": "chat", "message": "How much SIP do I need?" }
 ```
 
-Returns `ExecutionOutput` with: plan, analysis, impactDashboard, auditSummary.
+Returns `ExecutionOutput` with: `plan`, `analysis`, `impactDashboard`, `auditSummary`. 
