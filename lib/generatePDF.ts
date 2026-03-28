@@ -1,500 +1,392 @@
 'use client'
 
-function toStr(v: unknown): string { return v ? String(v) : '' }
-function toNum(v: unknown): number { const x = Number(v); return isNaN(x) || !isFinite(x) ? 0 : x }
-function toArr(v: unknown): Record<string, unknown>[] { return Array.isArray(v) ? (v as Record<string, unknown>[]) : [] }
-function toStrArr(v: unknown): string[] { return Array.isArray(v) ? (v as string[]) : [] }
-function toObj(v: unknown): Record<string, unknown> {
-  return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {}
+function s(v: unknown): string { return v ? String(v) : '' }
+function n(v: unknown): number { const x = Number(v); return isNaN(x) || !isFinite(x) ? 0 : x }
+function arr(v: unknown): Record<string, unknown>[] { return Array.isArray(v) ? v as Record<string, unknown>[] : [] }
+function sarr(v: unknown): string[] { return Array.isArray(v) ? v as string[] : [] }
+function obj(v: unknown): Record<string, unknown> {
+  return v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, unknown> : {}
 }
 
-// jsPDF helvetica cannot render ₹ — use Rs. consistently
 function inr(amount: unknown): string {
-  const n = toNum(amount)
-  if (!n) return 'N/A'
-  if (n >= 10000000) return 'Rs.' + (n / 10000000).toFixed(2) + ' Cr'
-  if (n >= 100000)   return 'Rs.' + (n / 100000).toFixed(2) + ' L'
-  return 'Rs.' + Math.round(n).toLocaleString('en-IN')
+  const x = n(amount)
+  if (!x) return '—'
+  if (x >= 10000000) return '₹' + (x / 10000000).toFixed(2) + ' Cr'
+  if (x >= 100000)   return '₹' + (x / 100000).toFixed(2) + ' L'
+  return '₹' + Math.round(x).toLocaleString('en-IN')
 }
-function pct(v: unknown): string { const n = toNum(v); return n ? n.toFixed(1) + '%' : 'N/A' }
 
-type RGB = [number, number, number]
+function pct(v: unknown): string {
+  const x = n(v)
+  return x ? x.toFixed(1) + '%' : '—'
+}
 
 export async function generateAndDownloadPDF(rawReport: unknown, userName: string): Promise<void> {
-  const { jsPDF } = await import('jspdf')
-  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+  const report  = obj(rawReport)
+  const outputs = obj(report.outputs)
+  const plan    = obj(outputs.plan)
+  const analysis = obj(outputs.analysis)
+  const impact  = obj(outputs.impactDashboard)
+  const metrics = obj(report.metrics)
 
-  const report   = toObj(rawReport)
-  const outputs  = toObj(report.outputs)
-  const plan     = toObj(outputs.plan)
-  const analysis = toObj(outputs.analysis)
-  const impact   = toObj(outputs.impactDashboard)
-  const metrics  = toObj(report.metrics)
+  const strategy        = s(plan.strategy)
+  const explainability  = s(plan.explainability)
+  const sipPlan         = arr(plan.sipPlan)
+  const actionItems     = arr(plan.actionItems)
+  const insights        = sarr(plan.insights)
+  const taxSuggestions  = sarr(plan.taxSuggestions)
+  const missedDeducts   = arr(plan.missedDeductions)
+  const rebalancePlan   = arr(plan.rebalancingPlan)
+  const assetAlloc      = obj(plan.assetAllocation)
+  const taxResult       = obj(analysis.taxResult)
+  const oldRegime       = obj(taxResult.oldRegime)
+  const newRegime       = obj(taxResult.newRegime)
+  const fireM           = obj(analysis.fireMetrics)
+  const portM           = obj(analysis.portfolioMetrics)
 
-  const strategy       = toStr(plan.strategy)
-  const explainability = toStr(plan.explainability)
-  const sipPlan        = toArr(plan.sipPlan)
-  const actionItems    = toArr(plan.actionItems)
-  const insights       = toStrArr(plan.insights)
-  const taxSuggestions = toStrArr(plan.taxSuggestions)
-  const missedDeducts  = toArr(plan.missedDeductions)
-  const rebalancePlan  = toArr(plan.rebalancingPlan)
-  const assetAlloc     = toObj(plan.assetAllocation)
-  const taxResult      = toObj(analysis.taxResult)
-  const oldRegime      = toObj(taxResult.oldRegime)
-  const newRegime      = toObj(taxResult.newRegime)
-  const fireM          = toObj(analysis.fireMetrics)
-  const portM          = toObj(analysis.portfolioMetrics)
+  const taxSaved    = n(impact.taxSaved) || n(metrics.taxSaved)
+  const retReady    = n(impact.retirementReadiness) || n(metrics.retirementReadiness)
+  const healthScore = n(metrics.healthScore)
+  const xirr        = n(metrics.xirr) || n(portM.xirr)
+  const taxRec      = s(taxResult.recommendation) || 'new'
+  const taxSavings  = n(taxResult.savings)
+  const oldTax      = n(oldRegime.tax)
+  const newTax      = n(newRegime.tax)
 
-  const taxSaved    = toNum(impact.taxSaved) || toNum(metrics.taxSaved)
-  const retReady    = toNum(impact.retirementReadiness) || toNum(metrics.retirementReadiness)
-  const healthScore = toNum(metrics.healthScore)
-  const xirr        = toNum(metrics.xirr) || toNum(portM.xirr)
-  const taxRec      = toStr(taxResult.recommendation) || 'new'
-  const taxSavings  = toNum(taxResult.savings)
-  const oldTax      = toNum(oldRegime.tax)
-  const newTax      = toNum(newRegime.tax)
   const now = new Date().toLocaleDateString('en-IN', { year: 'numeric', month: 'long', day: 'numeric' })
+  const allocEntries = Object.entries(assetAlloc).filter(([, v]) => n(v) > 0)
+  const barColors = ['#059669', '#2563eb', '#d97706', '#6b7280', '#7c3aed']
+  const priBg: Record<string, string>  = { high: '#fff1f2', medium: '#fffbeb', low: '#f0fdf4' }
+  const priCol: Record<string, string> = { high: '#e11d48', medium: '#d97706', low: '#16a34a' }
 
-  // ── Page dimensions ───────────────────────────────────────────────────────
-  const W   = 210   // A4 width mm
-  const M   = 14    // margin
-  const CW  = W - M * 2  // content width = 182mm
-  let   y   = 0
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Money Mentor — ${userName}</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:'Segoe UI',Arial,sans-serif;background:#fff;color:#111827;font-size:12px;line-height:1.5;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
 
-  // ── Color palette ─────────────────────────────────────────────────────────
-  const GREEN:  RGB = [5, 150, 105]
-  const DGREEN: RGB = [4, 110, 75]
-  const BLUE:   RGB = [37, 99, 235]
-  const AMBER:  RGB = [180, 100, 10]
-  const RED:    RGB = [185, 28, 28]
-  const DARK:   RGB = [17, 24, 39]
-  const MID:    RGB = [75, 85, 99]
-  const LIGHT:  RGB = [156, 163, 175]
-  const BG:     RGB = [248, 250, 252]
-  const WHITE:  RGB = [255, 255, 255]
+/* HEADER */
+.hdr{background:linear-gradient(135deg,#059669,#047857);color:#fff;padding:28px 36px 20px;position:relative;}
+.hdr h1{font-size:21px;font-weight:800;margin-bottom:3px;letter-spacing:-0.3px;}
+.hdr .sub{font-size:12px;opacity:.85;}
+.hdr .meta{font-size:10px;opacity:.6;margin-top:6px;}
 
-  // ── Drawing helpers ───────────────────────────────────────────────────────
-  const newPage = () => { doc.addPage(); y = M + 4 }
-  const checkPage = (need: number) => { if (y + need > 278) newPage() }
+/* IMPACT ROW */
+.impact-row{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;padding:16px 36px;background:#f8fafc;border-bottom:1px solid #e2e8f0;}
+.ic{background:#fff;border-radius:8px;padding:12px 14px;border-left:4px solid #059669;box-shadow:0 1px 3px rgba(0,0,0,.06);}
+.ic.blue{border-left-color:#2563eb;}.ic.amber{border-left-color:#d97706;}
+.iv{font-size:17px;font-weight:800;color:#059669;line-height:1.1;}
+.ic.blue .iv{color:#2563eb;}.ic.amber .iv{color:#d97706;}
+.il{font-size:9px;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;margin-top:3px;font-weight:600;}
 
-  const setF = (size: number, bold: boolean, color: RGB = DARK) => {
-    doc.setFontSize(size)
-    doc.setFont('helvetica', bold ? 'bold' : 'normal')
-    doc.setTextColor(...color)
+/* CONTENT */
+.content{padding:4px 36px 36px;}
+
+/* SECTION */
+.section{margin-top:22px;page-break-inside:avoid;}
+.st{font-size:11px;font-weight:700;color:#059669;text-transform:uppercase;letter-spacing:.7px;padding-bottom:6px;border-bottom:2px solid #d1fae5;margin-bottom:12px;display:flex;align-items:center;gap:6px;}
+.st::before{content:'';display:inline-block;width:4px;height:14px;background:#059669;border-radius:2px;flex-shrink:0;}
+
+/* TEXT BLOCK */
+.tb{background:#f0fdf4;border-left:3px solid #059669;border-radius:0 6px 6px 0;padding:10px 14px;font-size:12px;line-height:1.65;color:#374151;}
+.tb.blue{background:#eff6ff;border-left-color:#2563eb;}
+
+/* CARDS */
+.card-list{display:flex;flex-direction:column;gap:8px;}
+.card{display:flex;align-items:stretch;border-radius:7px;overflow:hidden;background:#f8fafc;}
+.card-accent{width:4px;flex-shrink:0;}
+.card-body{flex:1;padding:10px 12px;}
+.card-right{padding:10px 12px;text-align:right;flex-shrink:0;display:flex;flex-direction:column;justify-content:center;}
+.card-title{font-size:12px;font-weight:600;color:#111827;margin-bottom:2px;}
+.card-sub{font-size:10.5px;color:#6b7280;line-height:1.45;}
+.card-amount{font-size:13px;font-weight:800;color:#059669;white-space:nowrap;}
+.card-label{font-size:9px;color:#9ca3af;margin-top:1px;}
+
+/* BADGE */
+.badge{display:inline-block;padding:2px 7px;border-radius:20px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.3px;}
+
+/* TAX */
+.tax-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:10px;}
+.tax-card{border-radius:8px;padding:14px 16px;border:1.5px solid #e5e7eb;background:#f9fafb;position:relative;}
+.tax-card.rec{background:#f0fdf4;border-color:#059669;border-width:2px;}
+.tax-label{font-size:9px;font-weight:700;text-transform:uppercase;color:#6b7280;letter-spacing:.5px;margin-bottom:4px;}
+.tax-amount{font-size:22px;font-weight:800;color:#111827;margin-bottom:6px;}
+.tax-card.rec .tax-amount{color:#059669;}
+.tax-detail{font-size:10px;color:#6b7280;margin-bottom:2px;}
+.rec-badge{position:absolute;top:10px;right:10px;background:#059669;color:#fff;font-size:8px;font-weight:700;padding:2px 7px;border-radius:10px;}
+.sav-banner{background:#d1fae5;border-radius:7px;padding:10px 14px;text-align:center;font-size:13px;font-weight:700;color:#065f46;}
+
+/* ACTION ITEMS */
+.action{display:flex;gap:10px;padding:10px 12px;border-radius:7px;align-items:flex-start;margin-bottom:7px;page-break-inside:avoid;}
+.action-text .main{font-size:12px;font-weight:600;color:#111827;margin-bottom:2px;}
+.action-text .time{font-size:10px;color:#9ca3af;}
+
+/* NUMBERED */
+.nlist{display:flex;flex-direction:column;gap:7px;}
+.ni{display:flex;gap:10px;padding:9px 12px;background:#f8fafc;border-radius:7px;align-items:flex-start;}
+.nc{width:20px;height:20px;border-radius:50%;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;color:#fff;background:#059669;}
+.nc.blue{background:#2563eb;}
+.nt{font-size:11.5px;color:#374151;line-height:1.55;flex:1;}
+
+/* ALLOC BAR */
+.alloc-bar{height:24px;border-radius:5px;overflow:hidden;display:flex;margin-bottom:8px;}
+.aseg{display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#fff;}
+.aleg{display:flex;flex-wrap:wrap;gap:5px 16px;}
+.ali{display:flex;align-items:center;gap:5px;font-size:11px;color:#374151;}
+.adot{width:9px;height:9px;border-radius:2px;flex-shrink:0;}
+
+/* TABLE */
+.kvt{width:100%;border-collapse:collapse;}
+.kvt tr{border-bottom:1px solid #f3f4f6;}
+.kvt td{padding:7px 3px;font-size:11.5px;}
+.kvt td:first-child{color:#6b7280;font-weight:500;}
+.kvt td:last-child{font-weight:700;text-align:right;}
+.green{color:#059669;}.amber{color:#d97706;}.red{color:#dc2626;}
+
+/* FIRE GRID */
+.fire-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px;}
+.fc{background:#f8fafc;border-radius:7px;padding:12px 14px;border-left:3px solid #059669;}
+.fc.blue{border-left-color:#2563eb;}.fc.amber{border-left-color:#d97706;}
+.fv{font-size:15px;font-weight:800;color:#059669;}
+.fc.blue .fv{color:#2563eb;}.fc.amber .fv{color:#d97706;}
+.fl{font-size:9px;color:#6b7280;text-transform:uppercase;font-weight:600;margin-top:3px;letter-spacing:.3px;}
+
+/* DISCLAIMER */
+.disc{margin-top:22px;background:#fffbeb;border:1.5px solid #fcd34d;border-radius:8px;padding:13px 16px;}
+.disc-title{font-size:10px;font-weight:700;color:#92400e;text-transform:uppercase;letter-spacing:.4px;margin-bottom:5px;}
+.disc p{font-size:10.5px;color:#78350f;line-height:1.65;}
+
+/* FOOTER */
+.footer{margin-top:24px;padding-top:12px;border-top:1px solid #e5e7eb;display:flex;justify-content:space-between;font-size:9.5px;color:#9ca3af;}
+
+/* PRINT BUTTON */
+.print-btn{position:fixed;top:12px;right:12px;background:#059669;color:#fff;border:none;padding:9px 20px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;z-index:999;box-shadow:0 4px 12px rgba(5,150,105,.35);font-family:inherit;}
+.print-btn:hover{background:#047857;}
+
+@media print{
+  .print-btn{display:none!important;}
+  body{font-size:11px;}
+  .section{page-break-inside:avoid;}
+  .card,.action,.ni,.tax-card{page-break-inside:avoid;}
+  @page{margin:12mm 10mm;size:A4;}
+}
+</style>
+</head>
+<body>
+
+<button class="print-btn" onclick="window.print()">⬇ Save as PDF</button>
+
+<div class="hdr">
+  <div style="font-size:26px;margin-bottom:8px">💰</div>
+  <h1>AI Money Mentor Report</h1>
+  <div class="sub">Prepared for <strong>${userName}</strong></div>
+  <div class="sub">Generated on ${now}</div>
+  <div class="meta">Report ID: ${s(report.reportId) || 'N/A'} &nbsp;·&nbsp; Profile v${n(report.profileVersion) || 1} &nbsp;·&nbsp; 7-Agent Autonomous Analysis</div>
+</div>
+
+<div class="impact-row">
+  <div class="ic"><div class="iv">${healthScore ? healthScore + '/100' : 'N/A'}</div><div class="il">Health Score</div></div>
+  <div class="ic blue"><div class="iv">${retReady ? retReady + '%' : 'N/A'}</div><div class="il">Retirement Ready</div></div>
+  <div class="ic"><div class="iv">${taxSaved ? inr(taxSaved) : 'N/A'}</div><div class="il">Tax Saved</div></div>
+  <div class="ic amber"><div class="iv">${xirr ? pct(xirr) : 'N/A'}</div><div class="il">Portfolio XIRR</div></div>
+</div>
+
+<div class="content">
+
+${strategy ? `
+<div class="section">
+  <div class="st">Strategy Summary</div>
+  <div class="tb">${strategy}</div>
+</div>` : ''}
+
+${(oldTax > 0 || newTax > 0) ? `
+<div class="section">
+  <div class="st">Tax Regime Comparison</div>
+  <div class="tax-grid">
+    <div class="tax-card ${taxRec === 'old' ? 'rec' : ''}">
+      ${taxRec === 'old' ? '<span class="rec-badge">✓ RECOMMENDED</span>' : ''}
+      <div class="tax-label">Old Tax Regime</div>
+      <div class="tax-amount">${inr(oldTax)}</div>
+      <div class="tax-detail">Taxable Income: ${inr(n(oldRegime.taxableIncome))}</div>
+      <div class="tax-detail">Effective Rate: ${n(oldRegime.effectiveRate).toFixed(1)}%</div>
+    </div>
+    <div class="tax-card ${taxRec === 'new' ? 'rec' : ''}">
+      ${taxRec === 'new' ? '<span class="rec-badge">✓ RECOMMENDED</span>' : ''}
+      <div class="tax-label">New Tax Regime</div>
+      <div class="tax-amount">${inr(newTax)}</div>
+      <div class="tax-detail">Taxable Income: ${inr(n(newRegime.taxableIncome))}</div>
+      <div class="tax-detail">Effective Rate: ${n(newRegime.effectiveRate).toFixed(1)}%</div>
+    </div>
+  </div>
+  ${taxSavings > 0 ? `<div class="sav-banner">✓ You save ${inr(taxSavings)} by choosing the ${taxRec.toUpperCase()} Tax Regime</div>` : ''}
+</div>` : ''}
+
+${taxSuggestions.length > 0 ? `
+<div class="section">
+  <div class="st">Tax Saving Suggestions</div>
+  <div class="nlist">
+    ${taxSuggestions.map((tip, i) => `
+    <div class="ni"><div class="nc">${i + 1}</div><div class="nt">${tip}</div></div>`).join('')}
+  </div>
+</div>` : ''}
+
+${missedDeducts.length > 0 ? `
+<div class="section">
+  <div class="st">Missed Deductions</div>
+  <div class="card-list">
+    ${missedDeducts.map(d => `
+    <div class="card">
+      <div class="card-accent" style="background:#d97706"></div>
+      <div class="card-body">
+        <div class="card-title">${s(d.section)}</div>
+        <div class="card-sub">${s(d.description)}${n(d.limit) > 0 ? ' &nbsp;·&nbsp; Max: ' + inr(n(d.limit)) : ''}</div>
+      </div>
+      <div class="card-right">
+        <div class="card-amount" style="color:#059669">${inr(n(d.saving))}</div>
+        <div class="card-label">potential saving</div>
+      </div>
+    </div>`).join('')}
+  </div>
+</div>` : ''}
+
+${sipPlan.length > 0 ? `
+<div class="section">
+  <div class="st">Recommended SIP Plan</div>
+  <div class="card-list">
+    ${sipPlan.map(sp => `
+    <div class="card">
+      <div class="card-accent" style="background:#059669"></div>
+      <div class="card-body">
+        <div class="card-title">${s(sp.instrument) || s(sp.category)}</div>
+        <div class="card-sub"><strong>${s(sp.category)}</strong>${s(sp.rationale) ? ' &nbsp;·&nbsp; ' + s(sp.rationale) : ''}</div>
+      </div>
+      ${n(sp.amount) > 0 ? `<div class="card-right"><div class="card-amount">${inr(n(sp.amount))}/mo</div></div>` : ''}
+    </div>`).join('')}
+  </div>
+</div>` : ''}
+
+${allocEntries.length > 0 ? `
+<div class="section">
+  <div class="st">Asset Allocation</div>
+  <div class="alloc-bar">
+    ${allocEntries.map(([, v], i) => `<div class="aseg" style="width:${n(v)}%;background:${barColors[i % barColors.length]}">${n(v) >= 8 ? n(v) + '%' : ''}</div>`).join('')}
+  </div>
+  <div class="aleg">
+    ${allocEntries.map(([k, v], i) => `<div class="ali"><div class="adot" style="background:${barColors[i % barColors.length]}"></div>${k.charAt(0).toUpperCase() + k.slice(1)}: <strong>${n(v)}%</strong></div>`).join('')}
+  </div>
+</div>` : ''}
+
+${actionItems.length > 0 ? `
+<div class="section">
+  <div class="st">Action Plan</div>
+  ${actionItems.map(item => {
+    const p = s(item.priority).toLowerCase() || 'medium'
+    return `
+    <div class="action" style="background:${priBg[p] || '#f8fafc'}">
+      <span class="badge" style="background:${priBg[p]};color:${priCol[p]};border:1px solid ${priCol[p]}40;flex-shrink:0;margin-top:1px">${p.toUpperCase()}</span>
+      <div class="action-text">
+        <div class="main">${s(item.action)}</div>
+        ${s(item.timeline) ? `<div class="time">⏱ Timeline: ${s(item.timeline)}</div>` : ''}
+      </div>
+    </div>`}).join('')}
+</div>` : ''}
+
+${insights.length > 0 ? `
+<div class="section">
+  <div class="st">Key Insights</div>
+  <div class="nlist">
+    ${insights.map((ins, i) => `
+    <div class="ni"><div class="nc blue">${i + 1}</div><div class="nt">${ins}</div></div>`).join('')}
+  </div>
+</div>` : ''}
+
+${(n(fireM.requiredSIP) > 0 || n(fireM.retirementCorpusNeeded) > 0) ? `
+<div class="section">
+  <div class="st">FIRE Plan Metrics</div>
+  <div class="fire-grid">
+    <div class="fc"><div class="fv">${inr(n(fireM.requiredSIP))}</div><div class="fl">Monthly SIP Required</div></div>
+    <div class="fc blue"><div class="fv">${inr(n(fireM.retirementCorpusNeeded))}</div><div class="fl">Retirement Corpus</div></div>
+    <div class="fc amber"><div class="fv">${n(fireM.yearsToRetirement)} years</div><div class="fl">Years to Retirement</div></div>
+    <div class="fc"><div class="fv">${pct(fireM.savingsRate)}</div><div class="fl">Savings Rate</div></div>
+  </div>
+</div>` : ''}
+
+${n(portM.totalInvested) > 0 ? (() => {
+  const inv = n(portM.totalInvested)
+  const cur = n(portM.totalCurrentValue)
+  const ret = inv > 0 ? ((cur - inv) / inv * 100).toFixed(2) : '0'
+  return `
+<div class="section">
+  <div class="st">Portfolio Analysis</div>
+  <table class="kvt">
+    <tr><td>Total Invested</td><td>${inr(inv)}</td></tr>
+    <tr><td>Current Value</td><td class="${cur >= inv ? 'green' : 'red'}">${inr(cur)}</td></tr>
+    <tr><td>Absolute Returns</td><td class="${cur >= inv ? 'green' : 'red'}">${ret}%</td></tr>
+    <tr><td>XIRR (Annualised)</td><td class="${xirr >= 12 ? 'green' : 'amber'}">${xirr ? pct(xirr) : '—'}</td></tr>
+    <tr><td>Avg Expense Ratio</td><td>${n(portM.averageExpenseRatio).toFixed(2)}%</td></tr>
+  </table>
+</div>`
+})() : ''}
+
+${rebalancePlan.length > 0 ? `
+<div class="section">
+  <div class="st">Portfolio Rebalancing</div>
+  <div class="card-list">
+    ${rebalancePlan.map(rb => {
+      const act = s(rb.action).toLowerCase()
+      const ac  = ['sell','reduce'].includes(act) ? '#dc2626' : act === 'hold' ? '#2563eb' : '#059669'
+      return `
+    <div class="card">
+      <div class="card-accent" style="background:${ac}"></div>
+      <div class="card-body">
+        <div class="card-title"><span class="badge" style="background:${ac}20;color:${ac};margin-right:6px">${s(rb.action).toUpperCase()}</span>${s(rb.fund)}</div>
+        <div class="card-sub">${s(rb.reason)}</div>
+      </div>
+    </div>`}).join('')}
+  </div>
+</div>` : ''}
+
+${explainability ? `
+<div class="section">
+  <div class="st">Why This Recommendation?</div>
+  <div class="tb blue">${explainability}</div>
+</div>` : ''}
+
+<div class="disc">
+  <div class="disc-title">⚠ SEBI Disclaimer</div>
+  <p>This report is AI-generated for educational and informational purposes only. It does not constitute SEBI-registered investment advice, portfolio management services, or certified financial planning. Mutual fund investments are subject to market risks. Please read all scheme-related documents carefully. Past performance is not indicative of future results. Consult a SEBI-registered investment advisor or certified financial planner before making any investment decisions.</p>
+</div>
+
+<div class="footer">
+  <span>AI Money Mentor &nbsp;·&nbsp; 7-Agent Autonomous Financial Analysis</span>
+  <span>Generated ${now}</span>
+</div>
+
+</div>
+</body>
+</html>`
+
+  // Open in new tab — user clicks "Save as PDF" button at top right
+  const newTab = window.open('', '_blank')
+  if (!newTab) {
+    // Fallback: download as HTML file
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
+    const url  = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href     = url
+    link.download = 'money-mentor-report-' + new Date().toISOString().split('T')[0] + '.html'
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    setTimeout(() => URL.revokeObjectURL(url), 3000)
+    return
   }
-
-  const fillRect = (x: number, yy: number, w: number, h: number, c: RGB) => {
-    doc.setFillColor(...c); doc.rect(x, yy, w, h, 'F')
-  }
-
-  const rRect = (x: number, yy: number, w: number, h: number, c: RGB) => {
-    doc.setFillColor(...c); doc.roundedRect(x, yy, w, h, 2, 2, 'F')
-  }
-
-  // Wrap and print text, returns new Y position
-  const wrapText = (text: string, x: number, yy: number, maxW: number, size: number, color: RGB = DARK): number => {
-    setF(size, false, color)
-    const lines = doc.splitTextToSize(text, maxW)
-    doc.text(lines, x, yy)
-    return yy + lines.length * (size * 0.38 + 1)
-  }
-
-  const sectionTitle = (title: string) => {
-    checkPage(18)
-    y += 5
-    fillRect(M, y, 4, 8, GREEN)
-    setF(10, true, DARK)
-    doc.text(title, M + 7, y + 6)
-    doc.setDrawColor(209, 250, 229); doc.setLineWidth(0.3)
-    doc.line(M, y + 9, M + CW, y + 9)
-    y += 14
-  }
-
-  // ════════════════════════════════════════════════════════════════
-  // HEADER
-  // ════════════════════════════════════════════════════════════════
-  fillRect(0, 0, W, 46, GREEN)
-  fillRect(0, 40, W, 6, DGREEN)
-
-  doc.setFillColor(...WHITE)
-  doc.circle(M + 9, 18, 8, 'F')
-  setF(9, true, GREEN); doc.text('AI', M + 5.5, 21.5)
-
-  setF(17, true, WHITE)
-  doc.text('AI Money Mentor Report', M + 22, 16)
-  setF(9, false, WHITE)
-  doc.text('Prepared for ' + userName, M + 22, 23)
-  setF(8, false, [200, 240, 220] as RGB)
-  doc.text(now + '   |   7-Agent Autonomous Analysis', M + 22, 29)
-  setF(7, false, [200, 240, 220] as RGB)
-  const rid = toStr(report.reportId)
-  doc.text('Report: ' + (rid ? rid.slice(0, 32) + '...' : 'N/A') + '   |   v' + (toNum(report.profileVersion) || 1), M, 42)
-
-  y = 55
-
-  // ── Impact metric cards ───────────────────────────────────────────────────
-  const cw4 = (CW - 6) / 4
-  const cards = [
-    { label: 'HEALTH SCORE',     value: healthScore ? healthScore + '/100' : 'N/A', color: GREEN },
-    { label: 'RETIREMENT READY', value: retReady    ? retReady + '%'       : 'N/A', color: BLUE  },
-    { label: 'TAX SAVED',        value: taxSaved    ? inr(taxSaved)        : 'N/A', color: GREEN },
-    { label: 'PORTFOLIO XIRR',   value: xirr        ? pct(xirr)            : 'N/A', color: AMBER },
-  ]
-  cards.forEach((c, i) => {
-    const cx = M + i * (cw4 + 2)
-    rRect(cx, y, cw4, 22, BG)
-    fillRect(cx, y, 3, 22, c.color)
-    setF(11, true, c.color)
-    // Ensure value fits — truncate if needed
-    const valLines = doc.splitTextToSize(c.value, cw4 - 6)
-    doc.text(valLines[0] ?? c.value, cx + 5, y + 11)
-    setF(6, false, LIGHT)
-    doc.text(c.label, cx + 5, y + 18)
-  })
-  y += 28
-
-  // ════════════════════════════════════════════════════════════════
-  // STRATEGY SUMMARY
-  // ════════════════════════════════════════════════════════════════
-  if (strategy) {
-    sectionTitle('STRATEGY SUMMARY')
-    const lines = doc.splitTextToSize(strategy, CW - 8)
-    const h = lines.length * 5.2 + 8
-    checkPage(h + 4)
-    rRect(M, y, CW, h, [240, 253, 244] as RGB)
-    fillRect(M, y, 3, h, GREEN)
-    setF(8.5, false, DARK)
-    doc.text(lines, M + 6, y + 6)
-    y += h + 6
-  }
-
-  // ════════════════════════════════════════════════════════════════
-  // TAX COMPARISON
-  // ════════════════════════════════════════════════════════════════
-  if (oldTax > 0 || newTax > 0) {
-    sectionTitle('TAX REGIME COMPARISON')
-    checkPage(50)
-    const hw = (CW - 6) / 2
-    const regimes = [
-      { label: 'Old Tax Regime', tax: oldTax, eff: toNum(oldRegime.effectiveRate), taxable: toNum(oldRegime.taxableIncome), rec: taxRec === 'old' },
-      { label: 'New Tax Regime', tax: newTax, eff: toNum(newRegime.effectiveRate), taxable: toNum(newRegime.taxableIncome), rec: taxRec === 'new' },
-    ]
-    regimes.forEach((r, i) => {
-      const rx = M + i * (hw + 6)
-      rRect(rx, y, hw, 36, r.rec ? ([240, 253, 244] as RGB) : BG)
-      if (r.rec) {
-        doc.setDrawColor(...GREEN); doc.setLineWidth(0.7)
-        doc.roundedRect(rx, y, hw, 36, 2, 2, 'S')
-        fillRect(rx + hw - 32, y + 3, 29, 5.5, GREEN)
-        setF(6, true, WHITE)
-        doc.text('RECOMMENDED', rx + hw - 17.5, y + 7.2, { align: 'center' })
-      }
-      setF(7.5, true, r.rec ? GREEN : MID); doc.text(r.label.toUpperCase(), rx + 4, y + 8)
-      setF(15, true, r.rec ? GREEN : DARK); doc.text(inr(r.tax), rx + 4, y + 21)
-      setF(7.5, false, MID)
-      doc.text('Taxable: ' + inr(r.taxable), rx + 4, y + 27)
-      doc.text('Eff. Rate: ' + r.eff.toFixed(1) + '%', rx + 4, y + 33)
-    })
-    y += 40
-    if (taxSavings > 0) {
-      checkPage(12)
-      rRect(M, y, CW, 10, [209, 250, 229] as RGB)
-      setF(9, true, DGREEN)
-      const savText = 'You save ' + inr(taxSavings) + ' by choosing the ' + taxRec.toUpperCase() + ' tax regime'
-      doc.text(doc.splitTextToSize(savText, CW - 10)[0] ?? savText, M + CW / 2, y + 7, { align: 'center' })
-      y += 14
-    }
-  }
-
-  // ════════════════════════════════════════════════════════════════
-  // TAX SUGGESTIONS
-  // ════════════════════════════════════════════════════════════════
-  if (taxSuggestions.length > 0) {
-    sectionTitle('TAX SAVING SUGGESTIONS')
-    taxSuggestions.forEach((tip, idx) => {
-      const lines = doc.splitTextToSize(tip, CW - 14)
-      const h = lines.length * 5.2 + 8
-      checkPage(h + 4)
-      rRect(M, y, CW, h, BG)
-      setF(9, true, GREEN); doc.text(String(idx + 1), M + 4, y + 6.5)
-      setF(8.5, false, DARK); doc.text(lines, M + 12, y + 6.5)
-      y += h + 4
-    })
-    y += 2
-  }
-
-  // ════════════════════════════════════════════════════════════════
-  // MISSED DEDUCTIONS
-  // ════════════════════════════════════════════════════════════════
-  if (missedDeducts.length > 0) {
-    sectionTitle('MISSED DEDUCTIONS')
-    missedDeducts.forEach(d => {
-      const lim  = toNum(d.limit)
-      const desc = toStr(d.description) + (lim > 0 ? '  (Max: ' + inr(lim) + ')' : '')
-      const descLines = doc.splitTextToSize(desc, CW - 56)
-      const h = Math.max(18, descLines.length * 5 + 12)
-      checkPage(h + 4)
-      rRect(M, y, CW, h, [255, 251, 235] as RGB)
-      fillRect(M, y, 3, h, AMBER)
-      setF(9, true, DARK)
-      doc.text(toStr(d.section), M + 6, y + 7)
-      setF(7.5, false, MID)
-      doc.text(descLines, M + 6, y + 13)
-      // Right side — saving amount aligned properly
-      const savText = inr(toNum(d.saving))
-      setF(10, true, GREEN)
-      doc.text(savText, M + CW - 3, y + 9, { align: 'right' })
-      setF(6.5, false, LIGHT)
-      doc.text('potential saving', M + CW - 3, y + 14, { align: 'right' })
-      y += h + 5
-    })
-  }
-
-  // ════════════════════════════════════════════════════════════════
-  // SIP PLAN
-  // ════════════════════════════════════════════════════════════════
-  if (sipPlan.length > 0) {
-    sectionTitle('RECOMMENDED SIP PLAN')
-    sipPlan.forEach(sp => {
-      const name     = toStr(sp.instrument) || toStr(sp.category)
-      const cat      = toStr(sp.category)
-      const rat      = toStr(sp.rationale)
-      const amount   = toNum(sp.amount)
-      // Name wraps within left 60% of card
-      const nameLines = doc.splitTextToSize(name, CW - 52)
-      const ratLines  = rat ? doc.splitTextToSize(rat, CW - 52) : []
-      const h = Math.max(18, nameLines.length * 5 + ratLines.length * 4.5 + 12)
-      checkPage(h + 4)
-      rRect(M, y, CW, h, BG)
-      fillRect(M, y, 3, h, GREEN)
-      setF(9, true, DARK)
-      doc.text(nameLines, M + 6, y + 7)
-      setF(7, false, MID)
-      const catY = y + 7 + nameLines.length * 5
-      doc.text('Category: ' + cat, M + 6, catY)
-      if (ratLines.length > 0) {
-        setF(7.5, false, MID)
-        doc.text(ratLines, M + 6, catY + 5)
-      }
-      if (amount > 0) {
-        setF(10, true, GREEN)
-        doc.text(inr(amount) + '/mo', M + CW - 3, y + 10, { align: 'right' })
-      }
-      y += h + 4
-    })
-  }
-
-  // ════════════════════════════════════════════════════════════════
-  // ASSET ALLOCATION
-  // ════════════════════════════════════════════════════════════════
-  const allocEntries = Object.entries(assetAlloc).filter(([, v]) => toNum(v) > 0)
-  if (allocEntries.length > 0) {
-    sectionTitle('ASSET ALLOCATION')
-    checkPage(32)
-    const barColors: RGB[] = [GREEN, BLUE, AMBER, MID, [124, 58, 237] as RGB]
-    let xb = M
-    allocEntries.forEach(([, v], i) => {
-      const bw = (toNum(v) / 100) * CW
-      fillRect(xb, y, bw, 12, barColors[i % barColors.length])
-      if (bw > 16) {
-        setF(8, true, WHITE)
-        doc.text(toNum(v) + '%', xb + bw / 2, y + 8.5, { align: 'center' })
-      }
-      xb += bw
-    })
-    y += 16
-    let xl = M
-    allocEntries.forEach(([k, v], i) => {
-      fillRect(xl, y, 5, 5, barColors[i % barColors.length])
-      setF(8, false, DARK)
-      doc.text(k.charAt(0).toUpperCase() + k.slice(1) + ': ' + toNum(v) + '%', xl + 7, y + 4)
-      xl += 46
-      if (xl > M + CW - 46) { xl = M; y += 8 }
-    })
-    y += 10
-  }
-
-  // ════════════════════════════════════════════════════════════════
-  // ACTION PLAN
-  // ════════════════════════════════════════════════════════════════
-  if (actionItems.length > 0) {
-    sectionTitle('ACTION PLAN')
-    const priColor: Record<string, RGB> = { high: RED, medium: AMBER, low: GREEN }
-    const priBg: Record<string, RGB>    = {
-      high:   [254, 242, 242],
-      medium: [255, 251, 235],
-      low:    [240, 253, 244],
-    }
-    actionItems.forEach(item => {
-      const pri   = toStr(item.priority).toLowerCase() || 'medium'
-      const act   = toStr(item.action)
-      const time  = toStr(item.timeline)
-      const col   = priColor[pri] ?? MID
-      const bg    = priBg[pri]    ?? BG
-      // Wrap action text within the available width (excluding badge space)
-      const actLines = doc.splitTextToSize(act, CW - 32)
-      const timeLines = time ? doc.splitTextToSize('Timeline: ' + time, CW - 32) : []
-      const h = Math.max(16, actLines.length * 5.2 + timeLines.length * 4.5 + 8)
-      checkPage(h + 4)
-      rRect(M, y, CW, h, bg)
-      fillRect(M, y, 3, h, col)
-      // Priority badge
-      fillRect(M + 5, y + (h / 2) - 3, 20, 6, col)
-      setF(6, true, WHITE)
-      doc.text(pri.toUpperCase(), M + 15, y + (h / 2) + 1, { align: 'center' })
-      // Action text — starts after badge column
-      setF(8.5, true, DARK)
-      doc.text(actLines, M + 28, y + 7)
-      if (timeLines.length > 0) {
-        setF(7, false, LIGHT)
-        doc.text(timeLines, M + 28, y + 7 + actLines.length * 5.2)
-      }
-      y += h + 4
-    })
-  }
-
-  // ════════════════════════════════════════════════════════════════
-  // KEY INSIGHTS
-  // ════════════════════════════════════════════════════════════════
-  if (insights.length > 0) {
-    sectionTitle('KEY INSIGHTS')
-    insights.forEach((ins, idx) => {
-      const lines = doc.splitTextToSize(ins, CW - 16)
-      const h = lines.length * 5.2 + 8
-      checkPage(h + 4)
-      rRect(M, y, CW, h, [239, 246, 255] as RGB)
-      fillRect(M, y, 3, h, BLUE)
-      setF(9, true, BLUE); doc.text(String(idx + 1), M + 6, y + 7)
-      setF(8.5, false, DARK); doc.text(lines, M + 14, y + 7)
-      y += h + 4
-    })
-  }
-
-  // ════════════════════════════════════════════════════════════════
-  // FIRE METRICS
-  // ════════════════════════════════════════════════════════════════
-  const reqSIP = toNum(fireM.requiredSIP)
-  const corpus = toNum(fireM.retirementCorpusNeeded)
-  if (reqSIP > 0 || corpus > 0) {
-    sectionTitle('FIRE PLAN METRICS')
-    checkPage(32)
-    const fcw = (CW - 6) / 2
-    const fireItems: Array<{ label: string; value: string; color: RGB }> = [
-      { label: 'Monthly SIP Required',    value: inr(reqSIP),  color: GREEN },
-      { label: 'Retirement Corpus Needed', value: inr(corpus),  color: BLUE  },
-      { label: 'Years to Retirement',      value: toNum(fireM.yearsToRetirement) + ' yrs', color: AMBER },
-      { label: 'Savings Rate',             value: pct(fireM.savingsRate), color: GREEN },
-    ]
-    fireItems.forEach((fi, i) => {
-      const fx = M + (i % 2) * (fcw + 6)
-      if (i === 2) { y += 26; checkPage(30) }
-      rRect(fx, y, fcw, 22, BG)
-      fillRect(fx, y, 3, 22, fi.color)
-      setF(11, true, fi.color)
-      const vLines = doc.splitTextToSize(fi.value, fcw - 8)
-      doc.text(vLines[0] ?? fi.value, fx + 6, y + 13)
-      setF(6.5, false, LIGHT)
-      doc.text(fi.label.toUpperCase(), fx + 6, y + 19)
-    })
-    y += 28
-  }
-
-  // ════════════════════════════════════════════════════════════════
-  // PORTFOLIO ANALYSIS
-  // ════════════════════════════════════════════════════════════════
-  const totalInv = toNum(portM.totalInvested)
-  const totalCur = toNum(portM.totalCurrentValue)
-  if (totalInv > 0) {
-    sectionTitle('PORTFOLIO ANALYSIS')
-    const rows = [
-      { label: 'Total Invested',    value: inr(totalInv), color: DARK },
-      { label: 'Current Value',     value: inr(totalCur), color: totalCur >= totalInv ? GREEN : RED },
-      { label: 'Absolute Returns',  value: totalInv > 0 ? ((totalCur - totalInv) / totalInv * 100).toFixed(2) + '%' : 'N/A', color: totalCur >= totalInv ? GREEN : RED },
-      { label: 'XIRR (Annualised)', value: xirr ? pct(xirr) : 'N/A', color: xirr >= 12 ? GREEN : AMBER },
-      { label: 'Avg Expense Ratio', value: toNum(portM.averageExpenseRatio).toFixed(2) + '%', color: DARK },
-    ]
-    rows.forEach(r => {
-      checkPage(8)
-      setF(8.5, false, MID); doc.text(r.label, M, y)
-      setF(8.5, true, r.color); doc.text(r.value, M + CW, y, { align: 'right' })
-      doc.setDrawColor(240, 242, 244); doc.setLineWidth(0.2)
-      doc.line(M, y + 2.5, M + CW, y + 2.5)
-      y += 7
-    })
-    y += 4
-  }
-
-  // ════════════════════════════════════════════════════════════════
-  // REBALANCING PLAN
-  // ════════════════════════════════════════════════════════════════
-  if (rebalancePlan.length > 0) {
-    sectionTitle('PORTFOLIO REBALANCING')
-    rebalancePlan.forEach(rb => {
-      const act      = toStr(rb.action).toUpperCase()
-      const fund     = toStr(rb.fund)
-      const reason   = toStr(rb.reason)
-      const actLower = act.toLowerCase()
-      const col      = ['SELL', 'REDUCE'].includes(act) ? RED : act === 'HOLD' ? BLUE : GREEN
-      const fundLines   = doc.splitTextToSize(fund, CW - 32)
-      const reasonLines = doc.splitTextToSize(reason, CW - 32)
-      const h = Math.max(16, (fundLines.length + reasonLines.length) * 5 + 10)
-      checkPage(h + 4)
-      rRect(M, y, CW, h, BG)
-      fillRect(M, y, 3, h, col)
-      fillRect(M + 5, y + 4, 22, 6, col)
-      setF(6, true, WHITE); doc.text(act.slice(0, 10), M + 16, y + 8.5, { align: 'center' })
-      setF(8.5, true, DARK); doc.text(fundLines, M + 30, y + 7)
-      setF(7.5, false, MID); doc.text(reasonLines, M + 30, y + 7 + fundLines.length * 5)
-      y += h + 4
-    })
-  }
-
-  // ════════════════════════════════════════════════════════════════
-  // WHY THIS RECOMMENDATION
-  // ════════════════════════════════════════════════════════════════
-  if (explainability) {
-    sectionTitle('WHY THIS RECOMMENDATION?')
-    const lines = doc.splitTextToSize(explainability, CW - 8)
-    const h = lines.length * 5.2 + 8
-    checkPage(h + 4)
-    rRect(M, y, CW, h, [239, 246, 255] as RGB)
-    fillRect(M, y, 3, h, BLUE)
-    setF(8.5, false, DARK); doc.text(lines, M + 6, y + 6.5)
-    y += h + 6
-  }
-
-  // ════════════════════════════════════════════════════════════════
-  // SEBI DISCLAIMER
-  // ════════════════════════════════════════════════════════════════
-  const disc = 'SEBI DISCLAIMER: This report is AI-generated for educational purposes only. It does not constitute SEBI-registered investment advice or certified financial planning. Mutual fund investments are subject to market risks. Past performance is not indicative of future results. Consult a SEBI-registered investment advisor before making investment decisions.'
-  const discLines = doc.splitTextToSize(disc, CW - 8)
-  const discH = discLines.length * 5 + 12
-  checkPage(discH + 8)
-  y += 4
-  doc.setFillColor(255, 251, 235)
-  doc.setDrawColor(253, 211, 77); doc.setLineWidth(0.5)
-  doc.roundedRect(M, y, CW, discH, 2, 2, 'FD')
-  setF(8, true, AMBER); doc.text('SEBI DISCLAIMER', M + 5, y + 7)
-  setF(7.5, false, [120, 80, 10] as RGB); doc.text(discLines, M + 5, y + 13)
-
-  // ════════════════════════════════════════════════════════════════
-  // FOOTER ON EVERY PAGE
-  // ════════════════════════════════════════════════════════════════
-  const totalPages = doc.getNumberOfPages()
-  for (let p = 1; p <= totalPages; p++) {
-    doc.setPage(p)
-    fillRect(0, 287, W, 10, BG)
-    doc.setDrawColor(220, 225, 230); doc.setLineWidth(0.3)
-    doc.line(0, 287, W, 287)
-    setF(7, false, LIGHT)
-    doc.text('AI Money Mentor  |  7-Agent Autonomous Financial Analysis', M, 293)
-    setF(7, true, MID)
-    doc.text('Page ' + p + ' of ' + totalPages, W - M, 293, { align: 'right' })
-  }
-
-  // ── Download ──────────────────────────────────────────────────────────────
-  const date = new Date().toISOString().split('T')[0]
-  const type = toStr(report.type) || 'report'
-  doc.save('money-mentor-' + type + '-' + date + '.pdf')
+  newTab.document.write(html)
+  newTab.document.close()
+  // Auto-trigger print after fonts load
+  setTimeout(() => { newTab.focus(); newTab.print() }, 800)
 }
